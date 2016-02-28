@@ -2,7 +2,7 @@
   "name": "bram",
   "version": "0.3.0",
   "description": "Web component architecture with Observables",
-  "main": "dist/bram.js",
+  "main": "lib/bram.js",
   "scripts": {
     "test": "testee test/test.html --browsers firefox"
   },
@@ -23,5 +23,16 @@
   "homepage": "https://github.com/matthewp/bram",
   "bugs": {
     "url": "https://github.com/matthewp/bram/issues"
+  },
+  "devDependencies": {
+    "steal": "^0.14.1"
+  },
+  "dependencies": {
+    "can-wait": "git://github.com/canjs/can-wait#globals",
+    "ccompute": "0.0.2",
+    "virtual-dom": "^2.1.1"
+  },
+  "system": {
+    "npmAlgorithm": "flat"
   }
 }

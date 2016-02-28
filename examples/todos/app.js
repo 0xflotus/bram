@@ -1,74 +1,73 @@
-"use strict";
+var Bram = require('bram');
 
-Bram.element({
-  tag: "todo-form",
-  template: "#tmpl-todo-form",
+var h = Bram.h;
+var compute = Bram.compute;
 
-  created: function(bind, shadow){
-    var form = shadow.querySelector('form');
-    var input = form.querySelector('input');
-    var submission = Rx.Observable.fromEvent(form, 'submit')
-      .map(ev => {
-        ev.preventDefault();
-        var value = input.value;
-        input.value = '';
-        return { type: 'add', item: value };
+var form = {
+  state: function(){
+    return compute('');
+  },
+
+  view: function(state){
+    var local = compute('');
+
+    return compute(function(){
+      return h('form', {
+        onsubmit: function(e) {
+          e.preventDefault();
+          state(local());
+          local('');
+        }
+      }, [
+        h('input', { type: 'text', onchange: function(e){
+          local(e.target.value);
+        }, value: local(), placeholder: 'Go to the store' })
+      ]);
+    });
+  }
+};
+
+var list = {
+  state: function(){
+    return Bram.list([ 'get stuff done' ]);
+  },
+
+  view: function(state){
+    return compute(function(){
+      var uls = state.map(function(item){
+        return h('li', item);
       });
-
-    Bram.send(this, submission);
+      return h('div', uls);
+    });
   }
-});
+};
 
-Bram.element({
-  tag: "todo-list",
-  template: "#tmpl-todo-list",
+var app = {
+  state: function(){
+    var items = list.state();
+    var newItem = form.state();
 
-  props: ["todos"],
-
-  created: function(bind){
-    bind('ul').list(this.todos, {
-      template: '#todos',
-      key: 'value',
-    }, (frag, todo) => {
-      frag.querySelector('.todo').textContent = todo.value;
-
-      var deletion = Rx.Observable.fromEvent(frag.querySelector('a'), 'click')
-        .map(() => ({ type: 'remove', item: todo }));
-
-      Bram.send(this, deletion);
+    newItem.bind('change', function(){
+      items.push(newItem());
     });
 
+    return {
+      items: items,
+      newItem: newItem
+    };
+  },
+
+  view: function(state){
+    var formView = form.view(state.newItem);
+    var listView = list.view(state.items);
+
+    return compute(function(){
+      return h('div', [
+        formView(),
+        listView()
+      ]);
+    });
   }
-});
+};
 
-Bram.element({
-  tag: "todo-app",
-  template: "#tmpl-todo-app",
-
-  created: function(bind){
-    var addTodo = (state, item) => ({
-      items: state.items.concat({ value: item })
-    });
-    var removeTodo = (state, item) => ({
-      items: state.items.filter(todo => todo.value !== item.value)
-    });
-
-  var messages = Bram.listen();
-
-   var state = messages
-    .startWith({ items: [{ value: 'Make an app' }] })
-    .scan(function(state, ev){
-      switch(ev.type) {
-        case 'add':
-          return addTodo(state, ev.item);
-        case 'remove':
-          return removeTodo(state, ev.item);
-      }
-    });
-
-    var todos = state.map(state => state.items);
-    this.querySelector('todo-list').todos = todos;
-
-    bind('#count').text(state.map(s => s.items.length));
-  }
-});
+Bram.mount('#app', app);

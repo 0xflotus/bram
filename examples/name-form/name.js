@@ -1,45 +1,38 @@
-Bram.element({
-  tag: "user-page",
-  template: "#user-template",
+var bram = require('../../lib/bram');
 
-  created: function(bind){
-    var messages = Bram.listen();
-
-    var first = messages.filter(ev => ev.type === 'first')
-      .map(ev => ev.value)
-      .startWith("");
-
-    var last = messages.filter(ev => ev.type === 'last')
-      .map(ev => ev.value)
-      .startWith("");
-
-    var form = this.querySelector('user-form');
-    form.first = first;
-    form.last = last;
-
-    var fullName = Rx.Observable.combineLatest(first, last, (first, last) => {
-      return first + ' ' + last;
-    });
-    bind('.name').text(fullName);
+var Person = bram.obs(['first', 'last'], {
+  fullName: function(){
+    return this.first + ' ' + this.last;
   }
 });
 
-Bram.element({
-  tag: "user-form",
-  template: "#form-template",
+var compute = bram.compute;
+var h = bram.h;
 
-  created: function(bind, shadow){
-    var firstEl = shadow.querySelector("[name=first]");
-    var first = Rx.Observable.fromEvent(firstEl, "keyup")
-      .map(ev => ({ type: 'first', value: ev.target.value }));
+var person = new Person({ first: '', last: '' });
 
-    var lastEl = shadow.querySelector("[name=last]");
-    var last = Rx.Observable.fromEvent(lastEl, "keyup")
-      .map(ev => ({ type: 'last', value: ev.target.value }));
+var userView = compute(function(){
+  return h('div', [
+    h('span', ['Full name: ', h('span', person.fullName())])
+  ]);
 
-    Bram.send(this, first);
-    Bram.send(this, last);
-  },
-
-  props: ["first", "last"]
 });
+
+var formView = compute(function(){
+  return h('form', [
+    h('input', { type: 'text', placeholder: 'First name',
+      onkeyup: function(e){
+        person.first = e.target.value;
+      } }),
+    h('input', { type: 'text', placeholder: 'First name',
+      onkeyup: function(e){
+        person.last = e.target.value;
+      } })
+  ]);
+});
+
+var view = compute(function(){
+  return h('div', [ userView(), formView() ]);
+});
+
+bram.mount("#app", view);

@@ -1,37 +1,35 @@
-"use strict";
+var Bram = require('bram');
 
-Bram.element({
-  tag: "tab-panel",
-  template: "#panel-template",
+var h = Bram.h;
+var compute = Bram.compute;
 
-  created: function(bind){
-    var hidden = this.visible.map(visible => !visible);
-    bind('.content').hideWhen(hidden);
-  },
+function panel(text, visible){
+  return h('div.panel', {
+    style: { display: visible ? 'block' : 'none' }
+  }, [ text ])
+}
 
-  props: ["visible"]
+var selected = can.compute(0);
+
+var view = compute(function(){
+  var select = function(i){
+    return function(){
+      selected(i);
+    };
+  };
+  var s = selected();
+
+  var link = function(title, i){
+    return h('a', { href: 'javascript://', onclick: select(i) }, title)
+  };
+
+  return h('div.tabs', [
+    link('First', 0),
+    link('Second', 1),
+
+    panel('Hello first', s === 0),
+    panel('Hello second', s === 1)
+  ])
 });
 
-Bram.element({
-  tag: "my-tab",
-  template: "#tab-template",
-
-  created: function(bind, shadow){
-    var selectedPanel = Rx.Observable.fromEvent(shadow, 'click')
-      .filter(ev => ev.target.tagName === 'A')
-      .map(ev => ev.target.index)
-      .startWith(0);
-
-    var t = shadow.querySelector('#link-template');
-    var panels = this.querySelectorAll('tab-panel');
-    [].forEach.call(panels, function(panel, i){
-      panel.visible = selectedPanel.map(selected => selected === i);
-
-      var clone = document.importNode(t.content, true);
-      var a = clone.querySelector('a');
-      a.index = i;
-      a.textContent = panel.getAttribute('title');
-      this.querySelector('.tabs').appendChild(clone);
-    }, shadow);
-  }
-});
+Bram.mount('#app', view);

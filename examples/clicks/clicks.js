@@ -1,23 +1,17 @@
-Bram.element({
-  tag: "click-count",
-  template: "#click-template",
+var Bram = require('bram');
 
-  props: ["count"],
+var h = Bram.h;
+var compute = Bram.compute;
 
-  created: function(bind, shadow){
-    var clicks = Rx.Observable.fromEvent(shadow.querySelector('button'), 'click')
-      .map(() => ({ type: 'click' }));
-    Bram.send(this, clicks);
+var count = compute(0);
 
-    bind(".count").text(this.count);
-  }
+var view = compute(function(){
+  return h('div', [
+    h('button', { type: 'button', onclick: function(){
+      count(count()+1);
+    }}, 'Click me'),
+    h('h2', '' + count())
+  ]);
 });
 
-var messages = Bram.listen();
-
-var count = messages
-  .filter(ev => ev.type === 'click')
-  .startWith(0)
-  .scan(value => value + 1);
-
-document.querySelector('click-count').count = count;
+Bram.mount('#app', view);
