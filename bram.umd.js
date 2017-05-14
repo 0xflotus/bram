@@ -53,6 +53,47 @@ class Transaction {
 
 Transaction.stack = [];
 
+let globalId = 0;
+const _prop = symbol('bramProp');
+
+class Property {
+  static for(obj, name) {
+    let props = obj[_prop];
+    if(!props) {
+      props = obj[_prop] = Object.create(null);
+      props[name] = new Property();
+    } else if(!props[name]) {
+      props[name] = new Property();
+    }
+    return props[name];
+  }
+
+  constructor() {
+    this.id = ++globalId;
+    this.tag = Date.now();
+  }
+}
+
+let observed = [];
+
+var notify = function(obj, name){
+  let tag = Date.now();
+  let prop = Property.for(obj, name);
+  observed.forEach(function(bindings){
+    for(var i = 0, len = bindings.length; i < len; i++) {
+      let binding = bindings[i];
+      if(binding.is(prop.id)) {
+        binding.tag = tag;
+        binding.update(tag);
+      } else if(binding.dirty(tag)) {
+        binding.tag = tag;
+      } else {
+        break;
+      }
+    }
+  });
+};
+
 function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
 }
@@ -168,6 +209,17 @@ var off = function(model, prop, callback){
   if(!ev.length) {
     delete evs[prop];
   }
+};
+
+toModel = function(o){
+  return new Proxy(o, {
+    // get:
+    set: function(target, property, value){
+      target[property] = value;
+      notify(target, property);
+      return true;
+    }
+  });
 };
 
 function Scope(model, parent) {
@@ -373,6 +425,46 @@ function parse(str){
   return result;
 }
 
+var Base = class {
+  constructor(node, prop, scope, expr) {
+    this.node = node;
+    this.prop = prop;
+    this.scope = scope;
+    this.expr = expr;
+  }
+
+  is(id) {
+    return this.prop.id === id;
+  }
+
+  dirty(tag) {
+    return tag > this.prop.tag;
+  }
+
+  getValue() {
+    return this.expr.getValue(this.scope);
+  }
+};
+
+var Attribute = class extends Base {
+  constructor(attrName, node, prop, scope, expr) {
+    super(node, prop, scope, expr);
+
+    this.attrName = attrName;
+  }
+
+  update() {
+    let value = this.getValue();
+    this.node.setAttribute(this.attrName, value);
+  }
+};
+
+var Text = class extends Base {
+  update() {
+    this.node.nodeValue = this.getValue();
+  }
+};
+
 var live = {
   attr: function(node, attrName){
     return function(val){
@@ -559,6 +651,20 @@ function setupBinding(scope, parseResult, link, fn){
   set();
 }
 
+function watch(binding, link) {
+  /*let name = expr.props()[0];
+  let lookup = scope.read(name);
+  let prop = Property.for(lookup.model, name);*/
+
+  binding.update(Date.now());
+  link.bindings.push(binding);
+
+  //let Binding = ops[op];
+  //let binding = 
+  //binding.update(Date.now());
+  //link.bindings.push(binding);
+}
+
 function inspect(node, ref, paths) {
   var ignoredAttrs = {};
 
@@ -585,8 +691,13 @@ function inspect(node, ref, paths) {
     case 3:
       var result = parse(node.nodeValue);
       if(result.hasBinding) {
-        paths[ref.id] = function(node, model, link){
-          setupBinding(model, result, link, live.text(node));
+        paths[ref.id] = function(node, scope, link){
+          //watch(0, node, result, scope, link);
+          let name = result.props()[0];
+          let lookup = scope.read(name);
+          let prop = Property.for(lookup.model, name);
+          let binding = new Text(node, prop, scope, result);
+          watch(binding, link);
         };
       }
       break;
@@ -609,7 +720,12 @@ function inspect(node, ref, paths) {
           setupBinding(model, result, link, live.prop(node, property));
           return;
         }
-        setupBinding(model, result, link, live.attr(node, name));
+        let scope = model;
+        let propName = result.props()[0];
+        let lookup = scope.read(name);
+        let prop = Property.for(lookup.model, propName);
+        let binding = new Attribute(name, node, prop, scope, result);
+        watch(binding, link);
       };
     } else if(property) {
       paths[ref.id] = function(node){
@@ -675,6 +791,7 @@ class Link {
     this.tree = frag;
     this.models = new MapOfMap();
     this.elements = new MapOfMap();
+    this.bindings = [];
     this.children = [];
   }
 
@@ -734,6 +851,7 @@ var stamp = function(template){
 
     var frag = document.importNode(template.content, true);
     var link = new Link(frag);
+    observed.push(link.bindings);
     hydrate(link, paths, scope);
     return link;
   };

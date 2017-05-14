@@ -2,6 +2,7 @@ import hydrate from './hydrate.js';
 import inspect from './inspect.js';
 import Link from './link.js';
 import Scope from './scope.js';
+import { observed } from './notify.js';
 
 export default function(template){
   template = (template instanceof HTMLTemplateElement) ? template : document.querySelector(template);
@@ -14,6 +15,7 @@ export default function(template){
 
     var frag = document.importNode(template.content, true);
     var link = new Link(frag);
+    observed.push(link.bindings);
     hydrate(link, paths, scope);
     return link;
   };

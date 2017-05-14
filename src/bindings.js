@@ -1,6 +1,9 @@
 import stamp from './stamp.js';
 import { arrayChange } from './model.js';
 import { slice } from './util.js';
+import Property from './property.js';
+import Attribute from './bindings/attribute.js';
+import Text from './bindings/text.js';
 
 var live = {
   attr: function(node, attrName){
@@ -188,4 +191,29 @@ function setupBinding(scope, parseResult, link, fn){
   set();
 }
 
-export { live, setupBinding };
+var ops = [
+  Text,
+  Attribute
+];
+
+function watch(binding, link) {
+  /*let name = expr.props()[0];
+  let lookup = scope.read(name);
+  let prop = Property.for(lookup.model, name);*/
+
+  binding.update(Date.now());
+  link.bindings.push(binding);
+
+  //let Binding = ops[op];
+  //let binding = 
+  //binding.update(Date.now());
+  //link.bindings.push(binding);
+}
+
+function extract(expr, scope) {
+  let name = expr.props()[0];
+  let lookup = scope.read(name);
+  let prop = Property.for(lookup.model, name);
+}
+
+export { live, setupBinding, watch };

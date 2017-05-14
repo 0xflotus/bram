@@ -1,6 +1,9 @@
 import parse from './expression.js';
-import { live, setupBinding } from './bindings.js';
+import { live, setupBinding, watch } from './bindings.js';
 import { forEach } from './util.js';
+import Property from './property.js';
+import TextBinding from './bindings/text.js';
+import AttributeBinding from './bindings/attribute.js';
 
 export default function inspect(node, ref, paths) {
   var ignoredAttrs = {};
@@ -28,8 +31,13 @@ export default function inspect(node, ref, paths) {
     case 3:
       var result = parse(node.nodeValue);
       if(result.hasBinding) {
-        paths[ref.id] = function(node, model, link){
-          setupBinding(model, result, link, live.text(node));
+        paths[ref.id] = function(node, scope, link){
+          //watch(0, node, result, scope, link);
+          let name = result.props()[0];
+          let lookup = scope.read(name);
+          let prop = Property.for(lookup.model, name);
+          let binding = new TextBinding(node, prop, scope, result);
+          watch(binding, link);
         };
       }
       break;
@@ -52,7 +60,12 @@ export default function inspect(node, ref, paths) {
           setupBinding(model, result, link, live.prop(node, property));
           return;
         }
-        setupBinding(model, result, link, live.attr(node, name));
+        let scope = model;
+        let propName = result.props()[0];
+        let lookup = scope.read(name);
+        let prop = Property.for(lookup.model, propName);
+        let binding = new AttributeBinding(name, node, prop, scope, result);
+        watch(binding, link);
       };
     } else if(property) {
       paths[ref.id] = function(node){

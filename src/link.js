@@ -6,6 +6,7 @@ class Link {
     this.tree = frag;
     this.models = new Map();
     this.elements = new Map();
+    this.bindings = [];
     this.children = [];
   }
 

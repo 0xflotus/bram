@@ -1,5 +1,6 @@
 import { symbol } from './util.js';
 import Transaction from './transaction.js';
+import notify from './notify.js';
 
 function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
@@ -116,6 +117,17 @@ var off = function(model, prop, callback){
   if(!ev.length) {
     delete evs[prop];
   }
+};
+
+toModel = function(o){
+  return new Proxy(o, {
+    // get:
+    set: function(target, property, value){
+      target[property] = value;
+      notify(target, property);
+      return true;
+    }
+  });
 };
 
 export {
