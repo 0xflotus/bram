@@ -14,6 +14,8 @@ var forEach = Array.prototype.forEach;
 var some = Array.prototype.some;
 var slice = Array.prototype.slice;
 
+let arrayChange = symbol('bram-array-change');
+
 class Transaction {
   static add(t) {
     this.current = t;
@@ -198,7 +200,6 @@ function observe(o, fn) {
 }
 
 var events = symbol('bram-events');
-var arrayChange = symbol('bram-array-change');
 
 var toModel = function(o, skipClone){
   if(isModel(o)) return o;
@@ -267,7 +268,15 @@ toModel = function(o){
     },
     set: function(target, property, value){
       target[property] = value;
-      notify(target, property);
+
+      if(isArraySet(target, property)) {
+        target[arrayChange] = {
+          index: +property,
+          type: 'set'
+        };
+      }
+
+      notify(m, property);
       return true;
     }
   });
@@ -337,7 +346,7 @@ Scope.prototype.add = function(object){
   return new Scope(model, this);
 };
 
-function hydrate(link, callbacks, scope) {
+function hydrate$1(link, callbacks, scope) {
   var paths = Object.keys(callbacks);
   var id = +paths.shift();
   var cur = 0;
@@ -666,6 +675,7 @@ function setupBinding(scope, parseResult, link, fn){
 
 function watch(render, link) {
   link.renders.push(render);
+  render.render();
 }
 
 class Reference {
@@ -753,9 +763,9 @@ class ConditionalRender extends Render {
     this.parentLink = link;
     this.hydrate = stamp(node);
     this.rendered = false;
-    this.child = {};
+    this.child = Object.create(null);
     this.placeholder = document.createTextNode('');
-    node.parentNode.replaceChild(placeholder, node);
+    node.parentNode.replaceChild(this.placeholder, node);
   }
 
   render() {
@@ -763,6 +773,8 @@ class ConditionalRender extends Render {
     var rendered = this.rendered;
     var val = this.ref.value();
     var parentScope = this.ref.scope;
+    var child = this.child;
+    var placeholder = this.placeholder;
     if(!rendered) {
       if(val) {
         var scope = parentScope.add(val);
@@ -771,8 +783,9 @@ class ConditionalRender extends Render {
         var tree = link.tree;
         child.children = slice.call(tree.childNodes);
         child.scope = scope;
-        placeholder.parentNode.insertBefore(tree, placeholder.nextSibling);
-        rendered = true;
+        placeholder.parentNode.insertBefore(tree,
+          placeholder.nextSibling);
+        this.rendered = true;
       }
     } else {
       var parent = placeholder.parentNode;
@@ -808,8 +821,8 @@ function inspect(node, ref, paths) {
             if(templateAttr === 'each') {
               live.each(node, scope, result, link);
             } else {
-              debugger;
               let render = new ConditionalRender(ref, node, link);
+              watch(render, link);
               
               //setupBinding(model, result, link, live[templateAttr](node, model, link));
             }
@@ -825,7 +838,6 @@ function inspect(node, ref, paths) {
           let ref = new Reference(result, scope);
           let render = new TextRender(ref, node);
           watch(render, link);
-          render.render();
         };
       }
       break;
@@ -853,7 +865,6 @@ function inspect(node, ref, paths) {
         let ref = new Reference(result, scope);
         let render = new AttributeRender(ref, node, name);
         watch(render, link);
-        render.render();
       };
     } else if(property) {
       paths[ref.id] = function(node){
@@ -980,7 +991,7 @@ var stamp = function(template){
     var frag = document.importNode(template.content, true);
     var link = new Link(frag);
     observed.push(link.renders);
-    hydrate(link, paths, scope);
+    hydrate$1(link, paths, scope);
     return link;
   };
 };

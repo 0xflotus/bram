@@ -1,4 +1,4 @@
-import { symbol } from './util.js';
+import { _tag } from './symbols.js';
 
 let globalRevision = 0;
 
@@ -30,8 +30,6 @@ class CompoundTag {
     }, 0);
   }
 }
-
-const _tag = symbol('bramTag');
 
 function getTag(obj, property) {
     let tags = obj[_tag];

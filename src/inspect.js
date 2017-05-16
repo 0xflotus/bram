@@ -2,7 +2,12 @@ import parse from './expression.js';
 import { live, setupBinding, watch } from './bindings.js';
 import { forEach } from './util.js';
 import { Reference } from './reference.js';
-import { AttributeRender, ConditionalRender, TextRender } from './renders.js';
+import {
+  AttributeRender,
+  ConditionalRender,
+  EachRender,
+  TextRender
+} from './renders.js';
 
 export default function inspect(node, ref, paths) {
   var ignoredAttrs = {};
@@ -18,14 +23,15 @@ export default function inspect(node, ref, paths) {
           ignoredAttrs[templateAttr] = true;
           paths[ref.id] = function(node, scope, link){
             let ref = new Reference(result, scope);
+            let render;
             if(templateAttr === 'each') {
-              live.each(node, scope, result, link);
+              //live.each(node, scope, result, link);
+              render = new EachRender(ref, node, link);
             } else {
-              let render = new ConditionalRender(ref, node, link);
-              watch(render, link);
-              
+              render = new ConditionalRender(ref, node, link);
               //setupBinding(model, result, link, live[templateAttr](node, model, link));
             }
+            watch(render, link);
           };
         }
       }

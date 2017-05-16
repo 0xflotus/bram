@@ -1,10 +1,15 @@
 import { symbol } from './util.js';
+import { arrayChange, _tag } from './symbols.js';
 import Transaction, { record } from './transaction.js';
 import notify from './notify.js';
 import Reflect from './reflect.js';
 
 function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
+}
+
+function isArraySet2(object, property){
+  return Array.isArray(object) && object[arrayChange] && !isNaN(+property);
 }
 
 function isArrayOrObject(object) {
@@ -59,7 +64,6 @@ function observe(o, fn) {
 }
 
 var events = symbol('bram-events');
-var arrayChange = symbol('bram-array-change');
 
 var toModel = function(o, skipClone){
   if(isModel(o)) return o;
@@ -128,6 +132,18 @@ toModel = function(o){
     },
     set: function(target, property, value){
       target[property] = value;
+
+      if(property === _tag) {
+        return true;
+      }
+
+      if(isArraySet(target, property)) {
+        target[arrayChange] = {
+          index: +property,
+          type: 'set'
+        };
+      }
+
       notify(m, property);
       return true;
     }

@@ -1,3 +1,4 @@
+import { arrayChange } from './symbols.js';
 import stamp from './stamp.js';
 import { slice } from './util.js';
 
@@ -86,4 +87,158 @@ class ConditionalRender extends Render {
   }
 }
 
-export { AttributeRender, ConditionalRender, TextRender };
+class EachRender extends Render {
+  constructor(ref, node, link) {
+    super(ref, node);
+    this.parentLink = link;
+    this.hydrate = stamp(node);
+    this.placeholder = document.createTextNode('');
+    node.parentNode.replaceChild(this.placeholder, node);
+
+    this.itemMap = new Map();
+    this.indexMap = new Map();
+
+    // TODO lazily do this maybe
+    let prop = ref.expr.props()[0];
+    this.list = ref.scope.read(prop).value;
+  }
+
+  removeItem(index) {
+    let info = this.indexMap.get(index);
+    if(info) {
+      info.nodes.forEach(function(node){
+        node.parentNode.removeChild(node);
+      });
+      this.parentLink.remove(info.link);
+      this.itemMap.delete(info.item);
+      this.indexMap.delete(index);
+    }
+  }
+
+  renderItem(item, i) {
+    let parentScope = this.ref.scope;
+    let scope = parentScope.add(item).add({ item: item, index: i});
+    let link = this.hydrate(scope);
+    this.parentLink.add(link);
+    let tree = link.tree;
+
+    let info = {
+      item: item,
+      link: link,
+      nodes: slice.call(tree.childNodes),
+      scope: scope,
+      index: i
+    };
+    this.itemMap.set(item, info);
+    this.indexMap.set(i, info);
+
+    let siblingInfo = this.indexMap.get(i + 1);
+    let parent = this.placeholder.parentNode;
+    if(siblingInfo) {
+      let firstChild = siblingInfo.nodes[0];
+      parent.insertBefore(tree, firstChild);
+    } else {
+      parent.appendChild(tree);
+    }
+  }
+
+  render() {
+    let event = this.list[arrayChange];
+    if(typeof event === 'object') {
+      console.log('hello there');
+    } else {
+      let render = this.renderItem.bind(this);
+      this.list.forEach(render);
+
+      // Tag the list so we are informed of what happens.
+      this.list[arrayChange] = true;
+    }
+
+
+    var observe = function(list){
+
+
+
+      // DONE
+      // var remove = function(index){
+      //   var info = indexMap.get(index);
+      //   if(info) {
+      //     info.nodes.forEach(function(node){
+      //       node.parentNode.removeChild(node);
+      //     });
+      //     parentLink.remove(info.link);
+      //     itemMap.delete(info.item);
+      //     indexMap.delete(index);
+      //   }
+      // };
+
+      // DONE
+      //list.forEach(render);
+
+      var onarraychange = function(ev, value){
+        if(ev.type === 'delete') {
+          remove(ev.index);
+          return;
+        }
+
+        var info = itemMap.get(value);
+        if(info) {
+          var oldIndex = info.index;
+          var hasChanged = oldIndex !== ev.index;
+          if(hasChanged) {
+            info.scope.model.index = info.index = ev.index;
+
+            var existingItem = indexMap.get(ev.index);
+            if(existingItem) {
+              indexMap.set(oldIndex, existingItem);
+            } else {
+              indexMap.delete(oldIndex);
+            }
+            indexMap.set(ev.index, info);
+
+            var ref = indexMap.get(ev.index + 1);
+            if(ref) {
+              ref = ref.nodes[0];
+            }
+
+            var nodeIdx = info.nodes.length - 1;
+            while(nodeIdx >= 0) {
+              placeholder.parentNode.insertBefore(info.nodes[nodeIdx], ref);
+              nodeIdx--;
+            }
+          }
+        } else {
+          remove(ev.index);
+          render(value, ev.index);
+        }
+      };
+
+      /*
+      parentLink.on(list, arrayChange, onarraychange);
+
+      return function(){
+        for(var i = 0, len = list.length; i < len; i++) {
+          remove(i);
+        }
+        parentLink.off(list, arrayChange, onarraychange);
+        itemMap = null;
+        indexMap = null;
+      };
+      */
+    };
+
+    /*var teardown = observe(scopeResult.value);
+
+    parentLink.on(scopeResult.model, prop, function(ev, newValue){
+      teardown();
+      teardown = observe(newValue);
+    });*/
+  }
+}
+
+export {
+  AttributeRender,
+  ConditionalRender,
+  EachRender,
+  TextRender
+};
