@@ -273,7 +273,7 @@ toModel = function(o){
     },
     set: function(target, property, value){
       target[property] = value;
-      notify(target, property);
+      notify(m, property);
       return true;
     }
   });
@@ -672,6 +672,7 @@ function setupBinding(scope, parseResult, link, fn){
 
 function watch(render, link) {
   link.renders.push(render);
+  render.render();
 }
 
 class Reference {
@@ -753,6 +754,53 @@ class AttributeRender extends Render {
   }
 }
 
+class ConditionalRender extends Render {
+  constructor(ref, node, link) {
+    super(ref, node);
+    this.parentLink = link;
+    this.hydrate = stamp(node);
+    this.rendered = false;
+    this.child = Object.create(null);
+    this.placeholder = document.createTextNode('');
+    node.parentNode.replaceChild(this.placeholder, node);
+  }
+
+  render() {
+    var hydrate = this.hydrate;
+    var rendered = this.rendered;
+    var val = this.ref.value();
+    var parentScope = this.ref.scope;
+    var child = this.child;
+    var placeholder = this.placeholder;
+    if(!rendered) {
+      if(val) {
+        var scope = parentScope.add(val);
+        var link = hydrate(scope);
+        this.parentLink.add(link);
+        var tree = link.tree;
+        child.children = slice.call(tree.childNodes);
+        child.scope = scope;
+        placeholder.parentNode.insertBefore(tree,
+          placeholder.nextSibling);
+        this.rendered = true;
+      }
+    } else {
+      var parent = placeholder.parentNode;
+      var sibling = placeholder.nextSibling;
+      if(val) {
+        child.children.forEach(function(node){
+          parent.insertBefore(node, sibling);
+        });
+      } else {
+        child.children.forEach(function(node){
+          parent.removeChild(node);
+        });
+      }
+    }
+    super.render();
+  }
+}
+
 function inspect(node, ref, paths) {
   var ignoredAttrs = {};
 
@@ -765,11 +813,15 @@ function inspect(node, ref, paths) {
         if(result.hasBinding) {
           result.throwIfMultiple();
           ignoredAttrs[templateAttr] = true;
-          paths[ref.id] = function(node, model, link){
+          paths[ref.id] = function(node, scope, link){
+            let ref = new Reference(result, scope);
             if(templateAttr === 'each') {
-              live.each(node, model, result, link);
+              live.each(node, scope, result, link);
             } else {
-              setupBinding(model, result, link, live[templateAttr](node, model, link));
+              let render = new ConditionalRender(ref, node, link);
+              watch(render, link);
+              
+              //setupBinding(model, result, link, live[templateAttr](node, model, link));
             }
           };
         }
@@ -783,7 +835,6 @@ function inspect(node, ref, paths) {
           let ref = new Reference(result, scope);
           let render = new TextRender(ref, node);
           watch(render, link);
-          render.render();
         };
       }
       break;
@@ -811,7 +862,6 @@ function inspect(node, ref, paths) {
         let ref = new Reference(result, scope);
         let render = new AttributeRender(ref, node, name);
         watch(render, link);
-        render.render();
       };
     } else if(property) {
       paths[ref.id] = function(node){

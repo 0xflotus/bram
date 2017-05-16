@@ -195,6 +195,7 @@ var ops = [
 
 function watch(render, link) {
   link.renders.push(render);
+  render.render();
 }
 
 export { live, setupBinding, watch };

@@ -47,6 +47,101 @@ class Transaction {
 
 Transaction.stack = [];
 
+let stack = [];
+let observing = false;
+function transaction() {
+  observing = true;
+  return popResults;
+}
+
+function popResults() {
+  observing = false;
+  let o = stack;
+  stack = [];
+  return o;
+}
+
+function record(object, property) {
+  if(observing) {
+    stack.push([object, property]);
+  }
+}
+
+let globalRevision = 0;
+
+class Tag {
+  constructor() {
+    this.revision = globalRevision;
+  }
+
+  dirty() {
+    this.revision = ++globalRevision;
+  }
+
+  value() {
+    return this.revision;
+  }
+}
+
+class CompoundTag {
+  constructor(parents) {
+    this.parents = parents.map(function(obs){
+      return getTag(obs[0], obs[1]);
+    });
+  }
+
+  value() {
+    return this.parents.reduce(function(val, cur){
+      let curValue = cur.value();
+      return curValue > val ? curValue : val;
+    }, 0);
+  }
+}
+
+const _tag = symbol('bramTag');
+
+function getTag(obj, property) {
+    let tags = obj[_tag];
+    if(!tags) {
+      tags = obj[_tag] = Object.create(null);
+      tags[property] = new Tag();
+    } else if(!tags[property]) {
+      tags[property] = new Tag();
+    }
+    return tags[property];
+}
+
+let observed = [];
+
+var notify = function(obj, name){
+  let tag = getTag(obj, name);
+  tag.dirty();
+
+  observed.forEach(function(renders) {
+    for(var i = 0, len = renders.length; i < len; i++) {
+      renders[i].rerender();
+    }
+  });
+};
+
+let def = null;
+
+if(typeof Reflect === 'object') {
+  def = Reflect;
+} else {
+  def = {
+    get: function(target, property, receiver) {
+      let desc = Object.getOwnPropertyDescriptor(target, property);
+      if(desc !== undefined && desc.get !== undefined) {
+        return desc.get.call(receiver);
+      }
+      return target[property];
+    }
+  };
+}
+
+var Reflect$1 = def;
+
 function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
 }
@@ -164,6 +259,22 @@ var off = function(model, prop, callback){
   }
 };
 
+toModel = function(o){
+  var m = new Proxy(o, {
+    get: function(target, property){
+      record(m, property);
+      return Reflect$1.get(target, property, m);
+    },
+    set: function(target, property, value){
+      target[property] = value;
+      notify(target, property);
+      return true;
+    }
+  });
+
+  return m;
+};
+
 function Scope(model, parent) {
   this.model = model;
   this.parent = parent;
@@ -177,10 +288,10 @@ Scope.prototype.read = function(prop){
 };
 
 Scope.prototype.readInTransaction = function(prop) {
-  var transaction = new Transaction();
-  transaction.start();
+  var transaction$$1 = new Transaction();
+  transaction$$1.start();
   var info = this.read(prop);
-  info.reads = transaction.stop();
+  info.reads = transaction$$1.stop();
   return info;
 };
 
@@ -553,6 +664,133 @@ function setupBinding(scope, parseResult, link, fn){
   set();
 }
 
+function watch(render, link) {
+  link.renders.push(render);
+}
+
+class Reference {
+  constructor(expr, scope) {
+    this.expr = expr;
+    this.scope = scope;
+    this._tag = null;
+    this._checked = false;
+  }
+
+  get tag() {
+    if(this._tag === null) {
+      let name = this.expr.props()[0];
+      let lookup = this.scope.read(name);
+      this._tag = getTag(lookup.model, name);
+    }
+    return this._tag;
+  }
+
+  validate(ticket) {
+    return this.tag.value() === ticket;
+  }
+
+  current() {
+    return this.expr.getValue(this.scope);
+  }
+
+  value() {
+    if(!this._checked) {
+      this._checked = true;
+      let t = transaction();
+      let val = this.current();
+      let parents = t();
+      if(parents.length > 1) {
+        this._tag = new CompoundTag(parents);
+      }
+      return val;
+    } else {
+      return this.current();
+    }    
+  }
+}
+
+class Render {
+  constructor(ref, node) {
+    this.ref = ref;
+    this.node = node;
+    this.lastTicket = null;
+  }
+
+  render() {
+    this.lastTicket = this.ref.tag.value();
+  }
+
+  rerender() {
+    if(!this.ref.validate(this.lastTicket)) {
+      this.render();
+    }
+  }
+}
+
+class TextRender extends Render {
+  render() {
+    this.node.nodeValue = this.ref.value();
+    super.render();
+  }
+}
+
+class AttributeRender extends Render {
+  constructor(ref, node, attrName) {
+    super(ref, node);
+    this.attrName = attrName;
+  }
+
+  render() {
+    let val = this.ref.value();
+    this.node.setAttribute(this.attrName, val);
+    super.render();
+  }
+}
+
+class ConditionalRender extends Render {
+  constructor(ref, node, link) {
+    super(ref, node);
+    this.parentLink = link;
+    this.hydrate = stamp(node);
+    this.rendered = false;
+    this.child = {};
+    this.placeholder = document.createTextNode('');
+    node.parentNode.replaceChild(placeholder, node);
+  }
+
+  render() {
+    var hydrate = this.hydrate;
+    var rendered = this.rendered;
+    var val = this.ref.value();
+    var parentScope = this.ref.scope;
+    if(!rendered) {
+      if(val) {
+        var scope = parentScope.add(val);
+        var link = hydrate(scope);
+        this.parentLink.add(link);
+        var tree = link.tree;
+        child.children = slice.call(tree.childNodes);
+        child.scope = scope;
+        placeholder.parentNode.insertBefore(tree, placeholder.nextSibling);
+        rendered = true;
+      }
+    } else {
+      var parent = placeholder.parentNode;
+      var sibling = placeholder.nextSibling;
+      if(val) {
+        child.children.forEach(function(node){
+          parent.insertBefore(node, sibling);
+        });
+      } else {
+        child.children.forEach(function(node){
+          parent.removeChild(node);
+        });
+      }
+    }
+    super.render();
+  }
+}
+
 function inspect(node, ref, paths) {
   var ignoredAttrs = {};
 
@@ -565,11 +803,15 @@ function inspect(node, ref, paths) {
         if(result.hasBinding) {
           result.throwIfMultiple();
           ignoredAttrs[templateAttr] = true;
-          paths[ref.id] = function(node, model, link){
+          paths[ref.id] = function(node, scope, link){
+            let ref = new Reference(result, scope);
             if(templateAttr === 'each') {
-              live.each(node, model, result, link);
+              live.each(node, scope, result, link);
             } else {
-              setupBinding(model, result, link, live[templateAttr](node, model, link));
+              debugger;
+              let render = new ConditionalRender(ref, node, link);
+              
+              //setupBinding(model, result, link, live[templateAttr](node, model, link));
             }
           };
         }
@@ -579,8 +821,11 @@ function inspect(node, ref, paths) {
     case 3:
       var result = parse(node.nodeValue);
       if(result.hasBinding) {
-        paths[ref.id] = function(node, model, link){
-          setupBinding(model, result, link, live.text(node));
+        paths[ref.id] = function(node, scope, link){
+          let ref = new Reference(result, scope);
+          let render = new TextRender(ref, node);
+          watch(render, link);
+          render.render();
         };
       }
       break;
@@ -603,7 +848,12 @@ function inspect(node, ref, paths) {
           setupBinding(model, result, link, live.prop(node, property));
           return;
         }
-        setupBinding(model, result, link, live.attr(node, name));
+
+        let scope = model;
+        let ref = new Reference(result, scope);
+        let render = new AttributeRender(ref, node, name);
+        watch(render, link);
+        render.render();
       };
     } else if(property) {
       paths[ref.id] = function(node){
@@ -669,6 +919,7 @@ class Link {
     this.tree = frag;
     this.models = new MapOfMap();
     this.elements = new MapOfMap();
+    this.renders = [];
     this.children = [];
   }
 
@@ -728,6 +979,7 @@ var stamp = function(template){
 
     var frag = document.importNode(template.content, true);
     var link = new Link(frag);
+    observed.push(link.renders);
     hydrate(link, paths, scope);
     return link;
   };

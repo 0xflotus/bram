@@ -128,7 +128,7 @@ toModel = function(o){
     },
     set: function(target, property, value){
       target[property] = value;
-      notify(target, property);
+      notify(m, property);
       return true;
     }
   });

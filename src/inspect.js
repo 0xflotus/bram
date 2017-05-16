@@ -2,7 +2,7 @@ import parse from './expression.js';
 import { live, setupBinding, watch } from './bindings.js';
 import { forEach } from './util.js';
 import { Reference } from './reference.js';
-import { AttributeRender, TextRender } from './renders.js';
+import { AttributeRender, ConditionalRender, TextRender } from './renders.js';
 
 export default function inspect(node, ref, paths) {
   var ignoredAttrs = {};
@@ -16,11 +16,15 @@ export default function inspect(node, ref, paths) {
         if(result.hasBinding) {
           result.throwIfMultiple();
           ignoredAttrs[templateAttr] = true;
-          paths[ref.id] = function(node, model, link){
+          paths[ref.id] = function(node, scope, link){
+            let ref = new Reference(result, scope);
             if(templateAttr === 'each') {
-              live.each(node, model, result, link);
+              live.each(node, scope, result, link);
             } else {
-              setupBinding(model, result, link, live[templateAttr](node, model, link));
+              let render = new ConditionalRender(ref, node, link);
+              watch(render, link);
+              
+              //setupBinding(model, result, link, live[templateAttr](node, model, link));
             }
           };
         }
@@ -34,7 +38,6 @@ export default function inspect(node, ref, paths) {
           let ref = new Reference(result, scope);
           let render = new TextRender(ref, node);
           watch(render, link);
-          render.render();
         };
       }
       break;
@@ -62,7 +65,6 @@ export default function inspect(node, ref, paths) {
         let ref = new Reference(result, scope);
         let render = new AttributeRender(ref, node, name);
         watch(render, link);
-        render.render();
       };
     } else if(property) {
       paths[ref.id] = function(node){
