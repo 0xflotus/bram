@@ -196,18 +196,8 @@ var ops = [
   Attribute
 ];
 
-function watch(binding, link) {
-  /*let name = expr.props()[0];
-  let lookup = scope.read(name);
-  let prop = Property.for(lookup.model, name);*/
-
-  binding.update(Date.now());
-  link.bindings.push(binding);
-
-  //let Binding = ops[op];
-  //let binding = 
-  //binding.update(Date.now());
-  //link.bindings.push(binding);
+function watch(render, link) {
+  link.renders.push(render);
 }
 
 function extract(expr, scope) {

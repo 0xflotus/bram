@@ -15,6 +15,7 @@
   <template>
     <div id="color" class="{{color}}">
       <span id="name">{{name}}</span>
+      <span id="fullname">{{fullname}}</span>
     </div>
   </template>
   <div id="main"></div>
@@ -24,7 +25,10 @@
     var template = document.querySelector('template');
     var model = window.model = Bram.model({
       name: 'Wilbur',
-      color: ''
+      color: '',
+      get fullname() {
+        return this.name + ' Phillips';
+      }
     });
 
     var hydrate = Bram.template(template);
@@ -37,6 +41,7 @@
     <script>
       describe('Template using attrs and textnodes', function(){
         var name = document.querySelector('#name');
+        var fullname = document.querySelector('#fullname');
         var color = document.querySelector('#color');
         var model = window.model;
 
@@ -48,6 +53,7 @@
         it('The TextNode can be updated', function(){
           model.name = 'Matthew';
           assert.equal(name.textContent, 'Matthew');
+          assert.equal(fullname.textContent, 'Matthew Phillips');
         });
 
         it('Attributes can be changed', function(){

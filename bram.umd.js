@@ -53,6 +53,26 @@ class Transaction {
 
 Transaction.stack = [];
 
+let stack = [];
+let observing = false;
+function transaction() {
+  observing = true;
+  return popResults;
+}
+
+function popResults() {
+  observing = false;
+  let o = stack;
+  stack = [];
+  return o;
+}
+
+function record(object, property) {
+  if(observing) {
+    stack.push([object, property]);
+  }
+}
+
 let globalId = 0;
 const _prop = symbol('bramProp');
 
@@ -74,22 +94,59 @@ class Property {
   }
 }
 
+let globalRevision = 0;
+
+class Tag {
+  constructor() {
+    this.revision = globalRevision;
+  }
+
+  dirty() {
+    this.revision = ++globalRevision;
+  }
+
+  value() {
+    return this.revision;
+  }
+}
+
+class CompoundTag {
+  constructor(parents) {
+    this.parents = parents.map(function(obs){
+      return getTag(obs[0], obs[1]);
+    });
+  }
+
+  value() {
+    return this.parents.reduce(function(val, cur){
+      let curValue = cur.value();
+      return curValue > val ? curValue : val;
+    }, 0);
+  }
+}
+
+const _tag = symbol('bramTag');
+
+function getTag(obj, property) {
+    let tags = obj[_tag];
+    if(!tags) {
+      tags = obj[_tag] = Object.create(null);
+      tags[property] = new Tag();
+    } else if(!tags[property]) {
+      tags[property] = new Tag();
+    }
+    return tags[property];
+}
+
 let observed = [];
 
 var notify = function(obj, name){
-  let tag = Date.now();
-  let prop = Property.for(obj, name);
-  observed.forEach(function(bindings){
-    for(var i = 0, len = bindings.length; i < len; i++) {
-      let binding = bindings[i];
-      if(binding.is(prop.id)) {
-        binding.tag = tag;
-        binding.update(tag);
-      } else if(binding.dirty(tag)) {
-        binding.tag = tag;
-      } else {
-        break;
-      }
+  let tag = getTag(obj, name);
+  tag.dirty();
+
+  observed.forEach(function(renders) {
+    for(var i = 0, len = renders.length; i < len; i++) {
+      renders[i].rerender();
     }
   });
 };
@@ -212,14 +269,23 @@ var off = function(model, prop, callback){
 };
 
 toModel = function(o){
-  return new Proxy(o, {
-    // get:
+  var m = new Proxy(o, {
+    get: function(target, property){
+      record(m, property);
+      let desc = Object.getOwnPropertyDescriptor(target, property);
+      if(desc !== undefined && desc.get !== undefined) {
+        return desc.get.call(m);
+      }
+      return target[property];
+    },
     set: function(target, property, value){
       target[property] = value;
       notify(target, property);
       return true;
     }
   });
+
+  return m;
 };
 
 function Scope(model, parent) {
@@ -235,10 +301,10 @@ Scope.prototype.read = function(prop){
 };
 
 Scope.prototype.readInTransaction = function(prop) {
-  var transaction = new Transaction();
-  transaction.start();
+  var transaction$$1 = new Transaction();
+  transaction$$1.start();
   var info = this.read(prop);
-  info.reads = transaction.stop();
+  info.reads = transaction$$1.stop();
   return info;
 };
 
@@ -424,46 +490,6 @@ function parse(str){
   result.includesNonBindings = result.raw.length > 0;
   return result;
 }
-
-var Base = class {
-  constructor(node, prop, scope, expr) {
-    this.node = node;
-    this.prop = prop;
-    this.scope = scope;
-    this.expr = expr;
-  }
-
-  is(id) {
-    return this.prop.id === id;
-  }
-
-  dirty(tag) {
-    return tag > this.prop.tag;
-  }
-
-  getValue() {
-    return this.expr.getValue(this.scope);
-  }
-};
-
-var Attribute = class extends Base {
-  constructor(attrName, node, prop, scope, expr) {
-    super(node, prop, scope, expr);
-
-    this.attrName = attrName;
-  }
-
-  update() {
-    let value = this.getValue();
-    this.node.setAttribute(this.attrName, value);
-  }
-};
-
-var Text = class extends Base {
-  update() {
-    this.node.nodeValue = this.getValue();
-  }
-};
 
 var live = {
   attr: function(node, attrName){
@@ -651,18 +677,87 @@ function setupBinding(scope, parseResult, link, fn){
   set();
 }
 
-function watch(binding, link) {
-  /*let name = expr.props()[0];
-  let lookup = scope.read(name);
-  let prop = Property.for(lookup.model, name);*/
+function watch(render, link) {
+  link.renders.push(render);
+}
 
-  binding.update(Date.now());
-  link.bindings.push(binding);
+class Reference {
+  constructor(expr, scope) {
+    this.expr = expr;
+    this.scope = scope;
+    this._tag = null;
+    this._checked = false;
+  }
 
-  //let Binding = ops[op];
-  //let binding = 
-  //binding.update(Date.now());
-  //link.bindings.push(binding);
+  get tag() {
+    if(this._tag === null) {
+      let name = this.expr.props()[0];
+      let lookup = this.scope.read(name);
+      this._tag = getTag(lookup.model, name);
+    }
+    return this._tag;
+  }
+
+  validate(ticket) {
+    return this.tag.value() === ticket;
+  }
+
+  current() {
+    return this.expr.getValue(this.scope);
+  }
+
+  value() {
+    if(!this._checked) {
+      this._checked = true;
+      let t = transaction();
+      let val = this.current();
+      let parents = t();
+      if(parents.length > 1) {
+        this._tag = new CompoundTag(parents);
+      }
+      return val;
+    } else {
+      return this.current();
+    }    
+  }
+}
+
+class Render {
+  constructor(ref, node) {
+    this.ref = ref;
+    this.node = node;
+    this.lastTicket = null;
+  }
+
+  render() {
+    this.lastTicket = this.ref.tag.value();
+  }
+
+  rerender() {
+    if(!this.ref.validate(this.lastTicket)) {
+      this.render();
+    }
+  }
+}
+
+class TextRender extends Render {
+  render() {
+    this.node.nodeValue = this.ref.value();
+    super.render();
+  }
+}
+
+class AttributeRender extends Render {
+  constructor(ref, node, attrName) {
+    super(ref, node);
+    this.attrName = attrName;
+  }
+
+  render() {
+    let val = this.ref.value();
+    this.node.setAttribute(this.attrName, val);
+    super.render();
+  }
 }
 
 function inspect(node, ref, paths) {
@@ -692,12 +787,10 @@ function inspect(node, ref, paths) {
       var result = parse(node.nodeValue);
       if(result.hasBinding) {
         paths[ref.id] = function(node, scope, link){
-          //watch(0, node, result, scope, link);
-          let name = result.props()[0];
-          let lookup = scope.read(name);
-          let prop = Property.for(lookup.model, name);
-          let binding = new Text(node, prop, scope, result);
-          watch(binding, link);
+          let ref = new Reference(result, scope);
+          let render = new TextRender(ref, node);
+          watch(render, link);
+          render.render();
         };
       }
       break;
@@ -720,12 +813,12 @@ function inspect(node, ref, paths) {
           setupBinding(model, result, link, live.prop(node, property));
           return;
         }
+
         let scope = model;
-        let propName = result.props()[0];
-        let lookup = scope.read(name);
-        let prop = Property.for(lookup.model, propName);
-        let binding = new Attribute(name, node, prop, scope, result);
-        watch(binding, link);
+        let ref = new Reference(result, scope);
+        let render = new AttributeRender(ref, node, name);
+        watch(render, link);
+        render.render();
       };
     } else if(property) {
       paths[ref.id] = function(node){
@@ -791,7 +884,7 @@ class Link {
     this.tree = frag;
     this.models = new MapOfMap();
     this.elements = new MapOfMap();
-    this.bindings = [];
+    this.renders = [];
     this.children = [];
   }
 
@@ -851,7 +944,7 @@ var stamp = function(template){
 
     var frag = document.importNode(template.content, true);
     var link = new Link(frag);
-    observed.push(link.bindings);
+    observed.push(link.renders);
     hydrate(link, paths, scope);
     return link;
   };

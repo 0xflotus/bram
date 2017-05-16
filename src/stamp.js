@@ -15,7 +15,7 @@ export default function(template){
 
     var frag = document.importNode(template.content, true);
     var link = new Link(frag);
-    observed.push(link.bindings);
+    observed.push(link.renders);
     hydrate(link, paths, scope);
     return link;
   };

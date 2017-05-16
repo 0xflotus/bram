@@ -32,3 +32,25 @@ class Transaction {
 Transaction.stack = [];
 
 export default Transaction;
+
+let stack = [];
+let observing = false;
+function transaction() {
+  observing = true;
+  return popResults;
+}
+
+function popResults() {
+  observing = false;
+  let o = stack;
+  stack = [];
+  return o;
+}
+
+function record(object, property) {
+  if(observing) {
+    stack.push([object, property]);
+  }
+}
+
+export { transaction, record };

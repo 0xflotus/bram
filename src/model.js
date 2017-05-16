@@ -1,5 +1,5 @@
 import { symbol } from './util.js';
-import Transaction from './transaction.js';
+import Transaction, { record } from './transaction.js';
 import notify from './notify.js';
 
 function isArraySet(object, property){
@@ -120,14 +120,23 @@ var off = function(model, prop, callback){
 };
 
 toModel = function(o){
-  return new Proxy(o, {
-    // get:
+  var m = new Proxy(o, {
+    get: function(target, property){
+      record(m, property);
+      let desc = Object.getOwnPropertyDescriptor(target, property);
+      if(desc !== undefined && desc.get !== undefined) {
+        return desc.get.call(m);
+      }
+      return target[property];
+    },
     set: function(target, property, value){
       target[property] = value;
       notify(target, property);
       return true;
     }
   });
+
+  return m;
 };
 
 export {
