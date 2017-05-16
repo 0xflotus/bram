@@ -1,9 +1,6 @@
 import stamp from './stamp.js';
 import { arrayChange } from './model.js';
 import { slice } from './util.js';
-import Property from './property.js';
-import Attribute from './bindings/attribute.js';
-import Text from './bindings/text.js';
 
 var live = {
   attr: function(node, attrName){
@@ -198,12 +195,6 @@ var ops = [
 
 function watch(render, link) {
   link.renders.push(render);
-}
-
-function extract(expr, scope) {
-  let name = expr.props()[0];
-  let lookup = scope.read(name);
-  let prop = Property.for(lookup.model, name);
 }
 
 export { live, setupBinding, watch };

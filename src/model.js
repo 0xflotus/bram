@@ -1,6 +1,7 @@
 import { symbol } from './util.js';
 import Transaction, { record } from './transaction.js';
 import notify from './notify.js';
+import Reflect from './reflect.js';
 
 function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
@@ -123,11 +124,7 @@ toModel = function(o){
   var m = new Proxy(o, {
     get: function(target, property){
       record(m, property);
-      let desc = Object.getOwnPropertyDescriptor(target, property);
-      if(desc !== undefined && desc.get !== undefined) {
-        return desc.get.call(m);
-      }
-      return target[property];
+      return Reflect.get(target, property, m);
     },
     set: function(target, property, value){
       target[property] = value;

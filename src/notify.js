@@ -1,4 +1,3 @@
-import Property from './property.js';
 import { getTag } from './tag.js';
 
 export let observed = [];

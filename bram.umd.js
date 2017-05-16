@@ -73,27 +73,6 @@ function record(object, property) {
   }
 }
 
-let globalId = 0;
-const _prop = symbol('bramProp');
-
-class Property {
-  static for(obj, name) {
-    let props = obj[_prop];
-    if(!props) {
-      props = obj[_prop] = Object.create(null);
-      props[name] = new Property();
-    } else if(!props[name]) {
-      props[name] = new Property();
-    }
-    return props[name];
-  }
-
-  constructor() {
-    this.id = ++globalId;
-    this.tag = Date.now();
-  }
-}
-
 let globalRevision = 0;
 
 class Tag {
@@ -150,6 +129,24 @@ var notify = function(obj, name){
     }
   });
 };
+
+let def = null;
+
+if(typeof Reflect === 'object') {
+  def = Reflect;
+} else {
+  def = {
+    get: function(target, property, receiver) {
+      let desc = Object.getOwnPropertyDescriptor(target, property);
+      if(desc !== undefined && desc.get !== undefined) {
+        return desc.get.call(receiver);
+      }
+      return target[property];
+    }
+  };
+}
+
+var Reflect$1 = def;
 
 function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
@@ -272,11 +269,7 @@ toModel = function(o){
   var m = new Proxy(o, {
     get: function(target, property){
       record(m, property);
-      let desc = Object.getOwnPropertyDescriptor(target, property);
-      if(desc !== undefined && desc.get !== undefined) {
-        return desc.get.call(m);
-      }
-      return target[property];
+      return Reflect$1.get(target, property, m);
     },
     set: function(target, property, value){
       target[property] = value;
