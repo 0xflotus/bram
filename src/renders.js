@@ -1,6 +1,8 @@
-import { arrayChange } from './symbols.js';
+import { arrayChanges } from './model.js';
 import stamp from './stamp.js';
 import { slice } from './util.js';
+import { ValueReference } from './reference.js';
+import { getTag } from './tag.js';
 
 class Render {
   constructor(ref, node) {
@@ -87,40 +89,40 @@ class ConditionalRender extends Render {
   }
 }
 
-class EachRender extends Render {
-  constructor(ref, node, link) {
+class ItemRender extends Render {
+  constructor(ref, node, eachRender) {
     super(ref, node);
-    this.parentLink = link;
-    this.hydrate = stamp(node);
-    this.placeholder = document.createTextNode('');
-    node.parentNode.replaceChild(this.placeholder, node);
-
-    this.itemMap = new Map();
-    this.indexMap = new Map();
-
-    // TODO lazily do this maybe
-    let prop = ref.expr.props()[0];
-    this.list = ref.scope.read(prop).value;
+    this.parentLink = eachRender.link;
+    this.hydrate = eachRender.hydrate;
+    this.placeholder = eachRender.placeholder;
   }
 
-  removeItem(index) {
-    let info = this.indexMap.get(index);
-    if(info) {
-      info.nodes.forEach(function(node){
-        node.parentNode.removeChild(node);
-      });
-      this.parentLink.remove(info.link);
-      this.itemMap.delete(info.item);
-      this.indexMap.delete(index);
+  sibling() {
+    let index = this.ref.value().index;
+    let parent = this.placeholder.parentNode;
+    let sibling = this.placeholder.nextSibling;
+    while(sibling && index) {
+      sibling = sibling.nextSibling;
     }
+    return sibling;
   }
 
-  renderItem(item, i) {
-    let parentScope = this.ref.scope;
-    let scope = parentScope.add(item).add({ item: item, index: i});
+  render() {
+    let scope = this.ref.scope;
     let link = this.hydrate(scope);
     this.parentLink.add(link);
     let tree = link.tree;
+    let parent = this.placeholder.parentNode;
+    let sibling = this.sibling();
+    
+    if(sibling) {
+      parent.insertBefore(tree, sibling);
+    } else {
+      parent.appendChild(tree);
+    }
+
+    super.render();
+    /*
 
     let info = {
       item: item,
@@ -140,19 +142,64 @@ class EachRender extends Render {
     } else {
       parent.appendChild(tree);
     }
+    */
+  }
+}
+
+class EachRender extends Render {
+  constructor(ref, node, link) {
+    super(ref, node);
+    this.link = link;
+    this.hydrate = stamp(node);
+    this.placeholder = document.createTextNode('');
+    node.parentNode.replaceChild(this.placeholder, node);
+
+    this.itemMap = new Map();
+    this.indexMap = new Map();
+
+    // TODO lazily do this maybe
+    let prop = ref.expr.props()[0];
+    this.list = ref.scope.read(prop).value;
+    this.renders = null;
+    this.next = null;
+  }
+
+  removeItem(index) {
+    let info = this.indexMap.get(index);
+    if(info) {
+      info.nodes.forEach(function(node){
+        node.parentNode.removeChild(node);
+      });
+      this.parentLink.remove(info.link);
+      this.itemMap.delete(info.item);
+      this.indexMap.delete(index);
+    }
+  }
+
+  rerender() {
+    debugger;
+    if(!this.ref.validate(this.lastTicket)) {
+      this.render();
+      return;
+    }
+    for(var i = 0, len = this.renders.length; i < len; i++) {
+      this.renders[i].rerender();
+    }
   }
 
   render() {
-    let event = this.list[arrayChange];
-    if(typeof event === 'object') {
-      console.log('hello there');
-    } else {
-      let render = this.renderItem.bind(this);
-      this.list.forEach(render);
+    this.renders = [];
 
-      // Tag the list so we are informed of what happens.
-      this.list[arrayChange] = true;
-    }
+    this.list.forEach(function(listItem, i){
+      let parentScope = this.ref.scope;
+      let item = { item: listItem, index: i};
+      let scope = parentScope.add(item).add(item);
+      let tag = getTag(this.list, i);
+      let ref = new ValueReference(tag, scope, item);
+      let render = new ItemRender(ref, this.placeholder, this);
+      render.render();
+      this.renders.push(render);
+    }.bind(this));
 
 
     var observe = function(list){
@@ -233,6 +280,7 @@ class EachRender extends Render {
       teardown();
       teardown = observe(newValue);
     });*/
+    super.render();
   }
 }
 

@@ -1,7 +1,7 @@
 import parse from './expression.js';
 import { live, setupBinding, watch } from './bindings.js';
 import { forEach } from './util.js';
-import { Reference } from './reference.js';
+import { ScopeReference } from './reference.js';
 import {
   AttributeRender,
   ConditionalRender,
@@ -22,7 +22,7 @@ export default function inspect(node, ref, paths) {
           result.throwIfMultiple();
           ignoredAttrs[templateAttr] = true;
           paths[ref.id] = function(node, scope, link){
-            let ref = new Reference(result, scope);
+            let ref = new ScopeReference(result, scope);
             let render;
             if(templateAttr === 'each') {
               //live.each(node, scope, result, link);
@@ -41,7 +41,7 @@ export default function inspect(node, ref, paths) {
       var result = parse(node.nodeValue);
       if(result.hasBinding) {
         paths[ref.id] = function(node, scope, link){
-          let ref = new Reference(result, scope);
+          let ref = new ScopeReference(result, scope);
           let render = new TextRender(ref, node);
           watch(render, link);
         };
@@ -68,7 +68,7 @@ export default function inspect(node, ref, paths) {
         }
 
         let scope = model;
-        let ref = new Reference(result, scope);
+        let ref = new ScopeReference(result, scope);
         let render = new AttributeRender(ref, node, name);
         watch(render, link);
       };

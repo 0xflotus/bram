@@ -1,8 +1,28 @@
 import { CompoundTag, getTag } from './tag.js';
 import { transaction } from './transaction.js';
 
-class Reference {
+class BaseReference {
+  validate(ticket) {
+    return this.tag.value() === ticket;
+  }  
+}
+
+class ValueReference extends BaseReference {
+  constructor(tag, scope, value) {
+    super();
+    this.tag = tag;
+    this.scope = scope;
+    this._value = value;
+  }
+
+  value() {
+    return this._value;
+  }
+}
+
+class ScopeReference extends BaseReference {
   constructor(expr, scope) {
+    super();
     this.expr = expr;
     this.scope = scope;
     this._tag = null;
@@ -16,10 +36,6 @@ class Reference {
       this._tag = getTag(lookup.model, name);
     }
     return this._tag;
-  }
-
-  validate(ticket) {
-    return this.tag.value() === ticket;
   }
 
   current() {
@@ -42,4 +58,4 @@ class Reference {
   }
 }
 
-export { Reference };
+export { ScopeReference, ValueReference };

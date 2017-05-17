@@ -19,8 +19,12 @@ var asap = typeof Promise === 'function' ? cb => Promise.resolve().then(cb) : cb
 var forEach = Array.prototype.forEach;
 var some = Array.prototype.some;
 var slice = Array.prototype.slice;
+var toString = Object.prototype.toString;
 
-const arrayChange = symbol('bram-array-change');
+var isSymbol = function(prop){
+  return toString.call(prop) === '[object Symbol]';
+};
+
 const _tag = symbol('bram-tag');
 
 class Transaction {
@@ -153,6 +157,11 @@ function isArraySet(object, property){
   return Array.isArray(object) && !isNaN(+property);
 }
 
+function isArraySet2(object, property){
+  return Array.isArray(object) && 
+    !isNaN(+(isSymbol(property) ? 'm' : property));
+}
+
 function isArrayOrObject(object) {
   return Array.isArray(object) || typeof object === 'object';
 }
@@ -265,11 +274,13 @@ var off = function(model, prop, callback){
   }
 };
 
-toModel = function(o){
-  var m = new Proxy(o, {
+var arrayChanges = new Map();
+
+toModel = function(o, skipClone){
+  var m = new Proxy(deepModel(o, skipClone), {
     get: function(target, property){
       record(m, property);
-      return Reflect$1.get(target, property, m);
+      return Reflect$1.get(target, property, m); 
     },
     set: function(target, property, value){
       target[property] = value;
@@ -278,11 +289,13 @@ toModel = function(o){
         return true;
       }
 
-      if(isArraySet(target, property)) {
-        target[arrayChange] = {
-          index: +property,
-          type: 'set'
-        };
+      if(isArraySet2(target, property)) {
+        var changes = arrayChanges.get(target);
+        if(!changes) {
+          changes = [];
+          arrayChanges.set(target, changes);
+        }
+        changes.push({ index: +property, type: 'set' });
       }
 
       notify(m, property);
@@ -292,6 +305,8 @@ toModel = function(o){
 
   return m;
 };
+
+const arrayChange = symbol('bram-array-change');
 
 function Scope(model, parent) {
   this.model = model;
@@ -687,8 +702,28 @@ function watch(render, link) {
   render.render();
 }
 
-class Reference {
+class BaseReference {
+  validate(ticket) {
+    return this.tag.value() === ticket;
+  }  
+}
+
+class ValueReference extends BaseReference {
+  constructor(tag, scope, value) {
+    super();
+    this.tag = tag;
+    this.scope = scope;
+    this._value = value;
+  }
+
+  value() {
+    return this._value;
+  }
+}
+
+class ScopeReference extends BaseReference {
   constructor(expr, scope) {
+    super();
     this.expr = expr;
     this.scope = scope;
     this._tag = null;
@@ -702,10 +737,6 @@ class Reference {
       this._tag = getTag(lookup.model, name);
     }
     return this._tag;
-  }
-
-  validate(ticket) {
-    return this.tag.value() === ticket;
   }
 
   current() {
@@ -813,40 +844,40 @@ class ConditionalRender extends Render {
   }
 }
 
-class EachRender extends Render {
-  constructor(ref, node, link) {
+class ItemRender extends Render {
+  constructor(ref, node, eachRender) {
     super(ref, node);
-    this.parentLink = link;
-    this.hydrate = stamp(node);
-    this.placeholder = document.createTextNode('');
-    node.parentNode.replaceChild(this.placeholder, node);
-
-    this.itemMap = new Map();
-    this.indexMap = new Map();
-
-    // TODO lazily do this maybe
-    let prop = ref.expr.props()[0];
-    this.list = ref.scope.read(prop).value;
+    this.parentLink = eachRender.link;
+    this.hydrate = eachRender.hydrate;
+    this.placeholder = eachRender.placeholder;
   }
 
-  removeItem(index) {
-    let info = this.indexMap.get(index);
-    if(info) {
-      info.nodes.forEach(function(node){
-        node.parentNode.removeChild(node);
-      });
-      this.parentLink.remove(info.link);
-      this.itemMap.delete(info.item);
-      this.indexMap.delete(index);
+  sibling() {
+    let index = this.ref.value().index;
+    let parent = this.placeholder.parentNode;
+    let sibling = this.placeholder.nextSibling;
+    while(sibling && index) {
+      sibling = sibling.nextSibling;
     }
+    return sibling;
   }
 
-  renderItem(item, i) {
-    let parentScope = this.ref.scope;
-    let scope = parentScope.add(item).add({ item: item, index: i});
+  render() {
+    let scope = this.ref.scope;
     let link = this.hydrate(scope);
     this.parentLink.add(link);
     let tree = link.tree;
+    let parent = this.placeholder.parentNode;
+    let sibling = this.sibling();
+    
+    if(sibling) {
+      parent.insertBefore(tree, sibling);
+    } else {
+      parent.appendChild(tree);
+    }
+
+    super.render();
+    /*
 
     let info = {
       item: item,
@@ -866,19 +897,64 @@ class EachRender extends Render {
     } else {
       parent.appendChild(tree);
     }
+    */
+  }
+}
+
+class EachRender extends Render {
+  constructor(ref, node, link) {
+    super(ref, node);
+    this.link = link;
+    this.hydrate = stamp(node);
+    this.placeholder = document.createTextNode('');
+    node.parentNode.replaceChild(this.placeholder, node);
+
+    this.itemMap = new Map();
+    this.indexMap = new Map();
+
+    // TODO lazily do this maybe
+    let prop = ref.expr.props()[0];
+    this.list = ref.scope.read(prop).value;
+    this.renders = null;
+    this.next = null;
+  }
+
+  removeItem(index) {
+    let info = this.indexMap.get(index);
+    if(info) {
+      info.nodes.forEach(function(node){
+        node.parentNode.removeChild(node);
+      });
+      this.parentLink.remove(info.link);
+      this.itemMap.delete(info.item);
+      this.indexMap.delete(index);
+    }
+  }
+
+  rerender() {
+    debugger;
+    if(!this.ref.validate(this.lastTicket)) {
+      this.render();
+      return;
+    }
+    for(var i = 0, len = this.renders.length; i < len; i++) {
+      this.renders[i].rerender();
+    }
   }
 
   render() {
-    let event = this.list[arrayChange];
-    if(typeof event === 'object') {
-      console.log('hello there');
-    } else {
-      let render = this.renderItem.bind(this);
-      this.list.forEach(render);
+    this.renders = [];
 
-      // Tag the list so we are informed of what happens.
-      this.list[arrayChange] = true;
-    }
+    this.list.forEach(function(listItem, i){
+      let parentScope = this.ref.scope;
+      let item = { item: listItem, index: i};
+      let scope = parentScope.add(item).add(item);
+      let tag = getTag(this.list, i);
+      let ref = new ValueReference(tag, scope, item);
+      let render = new ItemRender(ref, this.placeholder, this);
+      render.render();
+      this.renders.push(render);
+    }.bind(this));
 
 
     var observe = function(list){
@@ -959,6 +1035,7 @@ class EachRender extends Render {
       teardown();
       teardown = observe(newValue);
     });*/
+    super.render();
   }
 }
 
@@ -975,7 +1052,7 @@ function inspect(node, ref, paths) {
           result.throwIfMultiple();
           ignoredAttrs[templateAttr] = true;
           paths[ref.id] = function(node, scope, link){
-            let ref = new Reference(result, scope);
+            let ref = new ScopeReference(result, scope);
             let render;
             if(templateAttr === 'each') {
               //live.each(node, scope, result, link);
@@ -994,7 +1071,7 @@ function inspect(node, ref, paths) {
       var result = parse(node.nodeValue);
       if(result.hasBinding) {
         paths[ref.id] = function(node, scope, link){
-          let ref = new Reference(result, scope);
+          let ref = new ScopeReference(result, scope);
           let render = new TextRender(ref, node);
           watch(render, link);
         };
@@ -1021,7 +1098,7 @@ function inspect(node, ref, paths) {
         }
 
         let scope = model;
-        let ref = new Reference(result, scope);
+        let ref = new ScopeReference(result, scope);
         let render = new AttributeRender(ref, node, name);
         watch(render, link);
       };

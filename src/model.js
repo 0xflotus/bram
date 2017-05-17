@@ -1,5 +1,5 @@
-import { symbol } from './util.js';
-import { arrayChange, _tag } from './symbols.js';
+import { symbol, isSymbol } from './util.js';
+import { _tag } from './symbols.js';
 import Transaction, { record } from './transaction.js';
 import notify from './notify.js';
 import Reflect from './reflect.js';
@@ -9,7 +9,8 @@ function isArraySet(object, property){
 }
 
 function isArraySet2(object, property){
-  return Array.isArray(object) && object[arrayChange] && !isNaN(+property);
+  return Array.isArray(object) && 
+    !isNaN(+(isSymbol(property) ? 'm' : property));
 }
 
 function isArrayOrObject(object) {
@@ -124,11 +125,13 @@ var off = function(model, prop, callback){
   }
 };
 
-toModel = function(o){
-  var m = new Proxy(o, {
+var arrayChanges = new Map();
+
+toModel = function(o, skipClone){
+  var m = new Proxy(deepModel(o, skipClone), {
     get: function(target, property){
       record(m, property);
-      return Reflect.get(target, property, m);
+      return Reflect.get(target, property, m); 
     },
     set: function(target, property, value){
       target[property] = value;
@@ -137,11 +140,13 @@ toModel = function(o){
         return true;
       }
 
-      if(isArraySet(target, property)) {
-        target[arrayChange] = {
-          index: +property,
-          type: 'set'
-        };
+      if(isArraySet2(target, property)) {
+        var changes = arrayChanges.get(target);
+        if(!changes) {
+          changes = [];
+          arrayChanges.set(target, changes);
+        }
+        changes.push({ index: +property, type: 'set' });
       }
 
       notify(m, property);
@@ -152,8 +157,11 @@ toModel = function(o){
   return m;
 };
 
+const arrayChange = symbol('bram-array-change');
+
 export {
   arrayChange,
+  arrayChanges,
   on,
   off,
   isModel,

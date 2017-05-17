@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<title>List demo</title>
+
+<my-list></my-list>
+
+<template id="list-tmpl">
+  <ul>
+    <template each="{{people}}">
+      <li>{{item}}</li>
+    </template>
+  </ul>
+
+  <button on-click="add">Add Matthew</button>
+</template>
+
+<script src="../../bram.umd.js"></script>
+<script>
+  class MyList extends Bram.Element {
+    static get template() {
+      return '#list-tmpl';
+    }
+
+    constructor() {
+      super();
+      this.model.people = [
+        "Wilbur",
+        "Anne",
+      ];
+    }
+
+    add() {
+      this.model.people.push('Matthew');  
+    }
+  }
+
+  customElements.define('my-list', MyList);
+</script>
