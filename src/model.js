@@ -140,15 +140,11 @@ toModel = function(o, skipClone){
         return true;
       }
 
-      if(isArraySet2(target, property)) {
-        var changes = arrayChanges.get(target);
-        if(!changes) {
-          changes = [];
-          arrayChanges.set(target, changes);
-        }
-        changes.push({ index: +property, type: 'set' });
-      }
-
+      notify(m, property);
+      return true;
+    },
+    deleteProperty(target, property){
+      delete target[property];
       notify(m, property);
       return true;
     }

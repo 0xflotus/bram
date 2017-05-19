@@ -15,8 +15,12 @@ class Render {
     this.lastTicket = this.ref.tag.value();
   }
 
+  isDirty() {
+    return !this.ref.validate(this.lastTicket);
+  }
+
   rerender() {
-    if(!this.ref.validate(this.lastTicket)) {
+    if(this.isDirty()) {
       this.render();
     }
   }
@@ -95,6 +99,7 @@ class ItemRender extends Render {
     this.parentLink = eachRender.link;
     this.hydrate = eachRender.hydrate;
     this.placeholder = eachRender.placeholder;
+    this.children = null;
   }
 
   sibling() {
@@ -107,6 +112,12 @@ class ItemRender extends Render {
     return sibling;
   }
 
+  remove() {
+    this.children.forEach(function(child){
+      child.parentNode.removeChild(child);
+    });
+  }
+
   render() {
     let scope = this.ref.scope;
     let link = this.hydrate(scope);
@@ -114,6 +125,7 @@ class ItemRender extends Render {
     let tree = link.tree;
     let parent = this.placeholder.parentNode;
     let sibling = this.sibling();
+    this.children = slice.call(tree.childNodes);
     
     if(sibling) {
       parent.insertBefore(tree, sibling);
@@ -160,6 +172,10 @@ class EachRender extends Render {
     // TODO lazily do this maybe
     let prop = ref.expr.props()[0];
     this.list = ref.scope.read(prop).value;
+    this.lengthRef = new ValueReference(
+      getTag(this.list, 'length'), ref.scope, null
+    );
+    this.lengthTicket = this.lengthRef.tag.value();
     this.renders = null;
     this.next = null;
   }
@@ -177,26 +193,48 @@ class EachRender extends Render {
   }
 
   rerender() {
-    debugger;
     if(!this.ref.validate(this.lastTicket)) {
       this.render();
       return;
     }
-    for(var i = 0, len = this.renders.length; i < len; i++) {
-      this.renders[i].rerender();
+    
+    // First see if anything was added.
+    if(!this.lengthRef.validate(this.lengthTicket)) {
+      this.lengthTicket = this.lengthRef.tag.value();
+      while(this.list.length > this.renders.length) {
+        let index = this.renders.length;
+        let render = this.makeItemRender(this.list[index], index);
+        render.render();
+        this.renders.push(render);
+      }
+      let i = 0;
+      while(this.list.length < this.renders.length) {
+        let render = this.renders[i];
+        if(render.isDirty()) {
+          render.remove();
+          this.renders.splice(i, 1);
+        } else {
+          i++;
+        }
+      }
     }
+  }
+
+  makeItemRender(listItem, i){
+    let parentScope = this.ref.scope;
+    let item = { item: listItem, index: i};
+    let scope = parentScope.add(item).add(item);
+    let tag = getTag(this.list, i);
+    let ref = new ValueReference(tag, scope, item);
+    let render = new ItemRender(ref, this.placeholder, this);
+    return render;
   }
 
   render() {
     this.renders = [];
 
     this.list.forEach(function(listItem, i){
-      let parentScope = this.ref.scope;
-      let item = { item: listItem, index: i};
-      let scope = parentScope.add(item).add(item);
-      let tag = getTag(this.list, i);
-      let ref = new ValueReference(tag, scope, item);
-      let render = new ItemRender(ref, this.placeholder, this);
+      let render = this.makeItemRender(listItem, i);
       render.render();
       this.renders.push(render);
     }.bind(this));

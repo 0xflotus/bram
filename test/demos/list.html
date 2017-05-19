@@ -5,13 +5,28 @@
 <my-list></my-list>
 
 <template id="list-tmpl">
+  <h1>People list</h1>
   <ul>
     <template each="{{people}}">
       <li>{{item}}</li>
     </template>
   </ul>
 
-  <button on-click="add">Add Matthew</button>
+  <section>
+    <h2>Push items</h2>
+    <button on-click="add">Add Matthew</button>
+  </section>
+
+  <section>
+    <h2>Unshift items</h2>
+    <button on-click="add2">Add Matthew</button>
+  </section>
+
+  <section>
+    <h2>Splicing items</h2>
+    <input type="text" value="" id="sel" />
+    <button on-click="remove">Remove</button>
+  </section>
 </template>
 
 <script src="../../bram.umd.js"></script>
@@ -31,6 +46,20 @@
 
     add() {
       this.model.people.push('Matthew');  
+    }
+
+    add2() {
+      this.model.people.unshift('Matthew');
+    }
+
+    remove() {
+      let input = this.shadowRoot.querySelector("#sel");
+      let value = input.value ? +input.value : 0;
+      if(value === 0) {
+        this.model.people.shift();
+      } else {
+        this.model.people.splice(value, 1);
+      }
     }
   }
 
