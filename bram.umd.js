@@ -17,7 +17,6 @@ var values = Object.values || function(obj){
 var asap = typeof Promise === 'function' ? cb => Promise.resolve().then(cb) : cb => setTimeout(_ => cb(), 0);
 
 var forEach = Array.prototype.forEach;
-var some = Array.prototype.some;
 var slice = Array.prototype.slice;
 
 class Transaction {
@@ -232,55 +231,33 @@ class Scope {
 
     return new Scope(model, this);
   }
-}
 
-function hydrate(link, callbacks, scope) {
-  var paths = Object.keys(callbacks);
-  if(paths.length === 0) return;
-  var id = +paths.shift();
-  var cur = 0;
-
-  traverse(link.tree);
-
-  function check(node) {
-    cur++;
-    if(id === cur) {
-      var callback = callbacks[id];
-      callback(node, scope, link);
-      id = +paths.shift();
-    }
-    return !id;
-  }
-
-  function traverse(node){
-    var exit;
-    var attributes = slice.call(node.attributes || []);
-    some.call(attributes, function(){
-      exit = check(node);
-      if(exit) {
-        return true;
-      }
-    });
-    if(exit) return false;
-
-    var child = node.firstChild, nextChild;
-    while(child) {
-      nextChild = child.nextSibling;
-      exit = check(child);
-      if(exit) {
-        break;
-      }
-
-      exit = !traverse(child);
-      if(exit) {
-        break;
-      }
-      child = nextChild;
-    }
-
-    return !exit;
+  each(cb) {
+    var scope = this;
+    do {
+      cb(scope.model);
+      scope = scope.parent;
+    } while(scope.parent);
   }
 }
+
+var hydrate = function(frag, parts){
+  var document = frag.ownerDocument;
+  var walker = document.createTreeWalker(frag, 133, null, false);
+  var updaters = [];
+
+  var index = -1, part;
+  for (var i = 0; i < parts.length; i++) {
+    part = parts[i];
+    while (index < part.index) {
+      index++;
+      walker.nextNode();
+    }
+    updaters.push(part.update.bind(part, walker.currentNode));
+  }
+
+  return updaters;
+};
 
 class ParseResult {
   constructor(){
@@ -675,6 +652,169 @@ function propAttr(name) {
   return (name && name[0] === ':') && name.substr(1);
 }
 
+function text(binding, tn, scope) {
+  tn.nodeValue = binding.getStringValue(scope);
+}
+
+function each(node, scope) {
+
+}
+
+function cond(node, scope) {
+
+}
+
+function prop(node, scope) {
+
+}
+
+function attr(node, scope) {
+
+}
+
+function event(node, scope) {
+
+}
+
+class Part {
+  constructor(index, updater) {
+    this.index = index;
+    this.updater = updater;
+  }
+
+  update(node, data) {
+    // call updater on the data
+    this.updater(node, data);
+  }
+}
+
+function inspect$1(node) {
+  var document = node.ownerDocument;
+  var walker = document.createTreeWalker(node, 133, null, false);
+  var parts = [];
+
+  var ignoredAttrs = Object.create(null);
+  var index = -1, currentNode;
+  while(walker.nextNode()) {
+    index++;
+    currentNode = walker.currentNode;
+    switch(currentNode.nodeType) {
+      // Element
+      case 1:
+        var templateAttr;
+        if(currentNode.nodeName === 'TEMPLATE' &&
+          (templateAttr = specialTemplateAttr$1(currentNode))) {
+          var attrValue = currentNode.getAttribute(templateAttr);
+          if(attrValue[0] !== "{") {
+            attrValue = "{{" + attrValue + "}}";
+          }
+          var result = parse(attrValue);
+          result.throwIfMultiple();
+          ignoredAttrs[templateAttr] = true;
+
+          var updateFn = templateAttr === 'each' ? each : cond;
+          parts.push(new Part(index, updateFn));
+        }
+
+        forEach.call(currentNode.attributes, function(attrNode){
+          if(ignoredAttrs[attrNode.name])
+            return;
+
+          var name = attrNode.name;
+          var property = propAttr$1(name);
+          var result = parse(attrNode.value);
+          if(result.hasBinding) {
+            if(property) {
+              currentNode.removeAttribute(name);
+              parts.push(new Part(index, prop));
+            } else {
+              parts.push(new Part(index, attr));
+            }
+          } else if(property) {
+            currentNode.removeAttribute(name);
+            parts.push(new Part(index, prop));
+          } else if(name.substr(0, 3) === 'on-') {
+            var eventName = name.substr(3);
+            currentNode.removeAttribute(name);
+            parts.push(new Part(index, event));
+          }
+        });
+
+        break;
+      // TextNode
+      case 3:
+        var result = parse(currentNode.nodeValue);
+        if(result.hasBinding) {
+          parts.push(new Part(index, text.bind(null, result)));
+        }
+        break;
+    }
+  }
+
+  return parts;
+}
+
+var specialTemplateAttrs$1 = ['if', 'each'];
+function specialTemplateAttr$1(template){
+  var attrName;
+  for(var i = 0, len = specialTemplateAttrs$1.length; i < len; i++) {
+    attrName = specialTemplateAttrs$1[i];
+    if(template.getAttribute(attrName))
+      return attrName;
+  }
+}
+
+function propAttr$1(name) {
+  return (name && name[0] === ':') && name.substr(1);
+}
+
+class Instance {
+  constructor(frag, parts) {
+    this.tree = frag;
+    this._updaters = hydrate(frag, parts);
+  }
+
+  update(scope) {
+    this._updaters.forEach(function(updater){
+      updater(scope);
+    });
+  }
+}
+
+var MODEL = symbol('bram.model');
+var CHECKPOINT = symbol('bram.checkpoint');
+
+function isModel$1(obj) {
+  return !!(obj && obj[MODEL]);
+}
+
+function toModel$1(obj) {
+  if(isModel$1(obj)) return obj;
+
+  var model = new Proxy(obj, {
+    set: function(target, prop, value, receiver) {
+      Reflect.set(target, prop, value, receiver);
+      callCheckpoints(model);
+    }
+  });
+
+  obj[MODEL] = true;
+  obj[CHECKPOINT] = [];
+
+  return model;
+}
+
+function addCheckpoint(model, fn) {
+  model[CHECKPOINT].push(fn);
+}
+
+function callCheckpoints(model) {
+  var fns = model[CHECKPOINT];
+  fns.forEach(function(fn){
+    fn();
+  });
+}
+
 class MapOfMap {
   constructor() {
     this.map = new Map();
@@ -697,72 +837,104 @@ class MapOfMap {
   }
 }
 
-class Link {
-  constructor(frag) {
-    this.tree = frag;
-    this.models = new MapOfMap();
-    this.elements = new MapOfMap();
-    this.children = [];
+class Scope$2 {
+  constructor(model, parent) {
+    this.model = model;
+    this.parent = parent;
   }
 
-  loop(map, cb) {
-    for(let [key, val] of map) {
-      cb(key, val[0], val[1]);
+  read(prop){
+    return this._read(prop) || {
+      model: this.model,
+      value: undefined
+    };
+  }
+
+  readInTransaction(prop) {
+    var transaction = new Transaction();
+    transaction.start();
+    var info = this.read(prop);
+    info.reads = transaction.stop();
+    return info;
+  }
+
+  _read(prop){
+    var model = this.model;
+    var val = model[prop];
+    if(val == null) {
+      // Handle dotted bindings like "user.name"
+      var parts = prop.split(".");
+      if(parts.length > 1) {
+        do {
+          val = model[parts.shift()];
+          if(parts.length) {
+            model = val;
+          }
+        } while(parts.length && val);
+      }
+    }
+    if(val != null) {
+      return {
+        model: model,
+        value: val
+      };
+    }
+    if(this.parent) {
+      return this.parent.read(prop);
     }
   }
 
-  on(obj, event, fn, isModel$$1) {
-    this.models.set(obj, event, fn);
-    on(obj, event, fn);
+  add(object){
+    var model;
+    if(isModel$1(object)) {
+      model = object;
+    } else {
+      var type = typeof object;
+      if(Array.isArray(object) || type === "object") {
+        model = toModel$1(object);
+      } else {
+        model = object;
+      }
+    }
+
+    return new Scope$2(model, this);
   }
 
-  off(obj, event, fn) {
-    this.models.delete(obj, event);
-    off(obj, event, fn);
-  }
-
-  bind(node, event, fn) {
-    this.elements.set(node, event, fn);
-    node.addEventListener(event, fn);
-  }
-
-  attach() {
-    this.loop(this.models, on);
-    this.children.forEach(function(link){
-      link.attach();
-    });
-  }
-
-  detach() {
-    this.loop(this.models, off);
-    this.children.forEach(function(link){
-      link.detach();
-    });
-  }
-
-  add(link) {
-    this.children.push(link);
-  }
-
-  remove(link) {
-    var idx = this.children.indexOf(link);
-    this.children.splice(idx, 1);
+  each(cb) {
+    var scope = this;
+    do {
+      cb(scope.model);
+      scope = scope.parent;
+    } while(scope);
   }
 }
 
 var stamp = function(template){
-  template = (template instanceof HTMLTemplateElement) ? template : document.querySelector(template);
-  var paths = inspect(template.content, {id:0}, {});
+  template = (template instanceof HTMLTemplateElement) ?
+    template : document.querySelector(template);
+
+  var parts = inspect$1(template.content.cloneNode(true));
 
   return function(scope){
-    if(!(scope instanceof Scope)) {
-      scope = new Scope(scope);
+    if(!(scope instanceof Scope$2)) {
+      scope = new Scope$2(scope);
     }
 
     var frag = document.importNode(template.content, true);
-    var link = new Link(frag);
-    hydrate(link, paths, scope);
-    return link;
+    var instance = new Instance(frag, parts);
+
+    function updateInstance() {
+      instance.update(scope);
+    }
+
+    scope.each(function(model){
+      addCheckpoint(model, updateInstance);
+    });
+
+    // Do the initial update
+    updateInstance();
+
+    return instance;
   };
 };
 
@@ -840,7 +1012,7 @@ function Bram$1(Element) {
 
 var Element = Bram$1(HTMLElement);
 Bram$1.Element = Element;
-Bram$1.model = toModel;
+Bram$1.model = toModel$1;
 Bram$1.on = on;
 Bram$1.off = off;
 Bram$1.template = stamp;

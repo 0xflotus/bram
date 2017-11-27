@@ -1,4 +1,4 @@
-import { isModel, toModel } from './model.js';
+import { isModel, toModel } from './model2.js';
 import Transaction from './transaction.js';
 
 class Scope {
@@ -69,7 +69,7 @@ class Scope {
     do {
       cb(scope.model);
       scope = scope.parent;
-    } while(scope.parent);
+    } while(scope);
   }
 }
 

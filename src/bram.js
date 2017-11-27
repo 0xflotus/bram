@@ -2,6 +2,7 @@ import { on, off, isModel, toModel } from './model.js';
 import Scope from './scope.js';
 import stamp from './stamp.js';
 import { asap } from './util.js';
+import { toModel as toModel2 } from './model2.js';
 
 function Bram(Element) {
   return class extends Element {
@@ -77,7 +78,7 @@ function Bram(Element) {
 
 var Element = Bram(HTMLElement);
 Bram.Element = Element;
-Bram.model = toModel;
+Bram.model = toModel2;
 Bram.on = on;
 Bram.off = off;
 Bram.template = stamp;
