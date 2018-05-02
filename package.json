@@ -32,6 +32,7 @@
     "url": "https://github.com/matthewp/bram/issues"
   },
   "devDependencies": {
+    "@matthewp/template-instantiation": "^1.0.0",
     "@webcomponents/custom-elements": "^1.0.0-alpha.3",
     "babili": "0.0.8",
     "cheerio": "^0.22.0",

@@ -1,7 +1,7 @@
 import { on, off, isModel, toModel } from './model.js';
 import Scope from './scope.js';
-import stamp from './stamp.js';
 import { asap } from './util.js';
+import createTemplate from './template.js';
 
 function Bram(Element) {
   return class extends Element {
@@ -9,14 +9,12 @@ function Bram(Element) {
       super();
 
       var Element = this.constructor;
-      let tmpl = Element.template;
-      if(tmpl) {
-        this._hydrate = stamp(tmpl);
-      }
       this._hasRendered = false;
 
       // Initially an empty object
       this.model = {};
+
+      this._hydrate = Element.template && createTemplate(Element.template);
 
       let events = Element.events;
       if(events && !Element._hasSetupEvents) {
@@ -36,21 +34,20 @@ function Bram(Element) {
           this.model = toModel(this.model);
         }
 
-        var scope = new Scope(this).add(this.model);
-        this._link = this._hydrate(scope);
-        var tree = this._link.tree;
-        var renderMode = this.constructor.renderMode;
+        let scope = new Scope(this).add(this.model);
+        this._template = this._hydrate(scope);
+
+        let renderMode = this.constructor.renderMode;
         if(renderMode === 'light') {
           this.innerHTML = '';
-          this.appendChild(tree);
+          this.appendChild(this._template);
         } else {
           this.attachShadow({ mode: 'open' });
-          this.shadowRoot.appendChild(tree);
+          this.shadowRoot.appendChild(this._template);
         }
         this._hasRendered = true;
-      } else if(this._hasRendered) {
-        this._link.attach();
       }
+
       if(this.childrenConnectedCallback) {
         this._disconnectChildMO = setupChildMO(this);
       }
@@ -80,7 +77,7 @@ Bram.Element = Element;
 Bram.model = toModel;
 Bram.on = on;
 Bram.off = off;
-Bram.template = stamp;
+Bram.template = createTemplate;
 
 function installEvents(Element) {
   Element._hasSetupEvents = true;

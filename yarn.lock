@@ -2,6 +2,10 @@
 # yarn lockfile v1
 
 
+"@matthewp/template-instantiation@^1.0.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@matthewp/template-instantiation/-/template-instantiation-1.1.0.tgz#9f46fa59a0172672208f3f3a9e16d8b8ca4cd922"
+
 "@webcomponents/custom-elements@^1.0.0-alpha.3":
   version "1.0.0-alpha.3"
   resolved "https://registry.yarnpkg.com/@webcomponents/custom-elements/-/custom-elements-1.0.0-alpha.3.tgz#340d8cc8307730540ac92276c9a49149f6fc0116"
