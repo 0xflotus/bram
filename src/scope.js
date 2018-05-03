@@ -48,6 +48,15 @@ class Scope {
     }
   }
 
+  eachModel(callback) {
+    let scope = this;
+
+    do {
+      callback(scope.model);
+      scope = scope.parent;
+    } while(scope);
+  }
+
   add(object){
     var model;
     if(isModel(object)) {

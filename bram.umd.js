@@ -1,10 +1,61 @@
 (function (global, factory) {
-  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('@matthewp/template-instantiation')) :
-  typeof define === 'function' && define.amd ? define(['@matthewp/template-instantiation'], factory) :
-  (global.Bram = factory(global.createInstance));
-}(this, (function (createInstance) { 'use strict';
+    typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+    typeof define === 'function' && define.amd ? define(factory) :
+    (global.Bram = factory());
+}(this, (function () { 'use strict';
 
-var createInstance__default = 'default' in createInstance ? createInstance['default'] : createInstance;
+const _conn = Symbol('bram.connections');
+
+function isModel(o) {
+  return _conn in o;
+}
+
+function toModel(o) {
+  if(isModel(o)) {
+    return o;
+  }
+
+  o[_conn] = new Set();
+  return observe(o);
+}
+
+function notify(o) {
+  const connections = o[_conn];
+  if(connections) {
+    for(const fn of connections) {
+      fn();
+    }
+  }
+}
+
+function observe(o) {
+  return new Proxy(o, {
+    set(target, key, value) {
+      Reflect.set(target, key, value);
+      notify(target);
+      return true;
+    },
+    deleteProperty(target, key) {
+      Reflect.deleteProperty(target, key);
+      notify(target);
+      return true;
+    }
+  });
+}
+
+function connect(o, callback) {
+  const connections = o[_conn];
+  if(connections) {
+    connections.add(callback);
+  }
+}
+
+function disconnect(o, callback) {
+  const connections = o[_conn];
+  if(connections) {
+    connections.delete(callback);
+  }
+}
 
 var symbol = typeof Symbol === 'function' ? Symbol :
   function(str){ return '@@-' + str; };
@@ -52,7 +103,7 @@ function isArrayOrObject(object) {
   return Array.isArray(object) || typeof object === 'object';
 }
 
-function observe(o, fn) {
+function observe$1(o, fn) {
   var proxy = new Proxy(o, {
     get: function(target, property) {
       Transaction.observe(proxy, property);
@@ -60,8 +111,8 @@ function observe(o, fn) {
     },
     set: function(target, property, value) {
       var oldValue = target[property];
-      if(!isModel(value) && isArrayOrObject(value)) {
-        value = toModel(value);
+      if(!isModel$1(value) && isArrayOrObject(value)) {
+        value = toModel$1(value);
       }
       target[property] = value;
 
@@ -102,8 +153,8 @@ function observe(o, fn) {
 var events = symbol('bram-events');
 var arrayChange = symbol('bram-array-change');
 
-var toModel = function(o, skipClone){
-  if(isModel(o)) return o;
+var toModel$1 = function(o, skipClone){
+  if(isModel$1(o)) return o;
 
   o = deepModel(o, skipClone) || {};
 
@@ -121,44 +172,21 @@ var toModel = function(o, skipClone){
     enumerable: false
   });
 
-  return observe(o, callback);
+  return observe$1(o, callback);
 };
 
 function deepModel(o, skipClone) {
   return !o ? o : Object.keys(o).reduce(function(acc, prop){
     var val = o[prop];
     acc[prop] = (Array.isArray(val) || typeof val === 'object')
-      ? toModel(val)
+      ? toModel$1(val)
       : val;
     return acc;
   }, o);
 }
 
-var isModel = function(object){
+var isModel$1 = function(object){
   return object && !!object[events];
-};
-
-var on = function(model, prop, callback){
-  var evs = model[events];
-  if(!evs) return;
-  var ev = evs[prop];
-  if(!ev) {
-    ev = evs[prop] = [];
-  }
-  ev.push(callback);
-};
-
-var off = function(model, prop, callback){
-  var evs = model[events];
-  if(!evs) return;
-  var ev = evs[prop];
-  if(!ev) return;
-  var idx = ev.indexOf(callback);
-  if(idx === -1) return;
-  ev.splice(idx, 1);
-  if(!ev.length) {
-    delete evs[prop];
-  }
 };
 
 class Scope {
@@ -208,14 +236,23 @@ class Scope {
     }
   }
 
+  eachModel(callback) {
+    let scope = this;
+
+    do {
+      callback(scope.model);
+      scope = scope.parent;
+    } while(scope);
+  }
+
   add(object){
     var model;
-    if(isModel(object)) {
+    if(isModel$1(object)) {
       model = object;
     } else {
       var type = typeof object;
       if(Array.isArray(object) || type === "object") {
-        model = toModel(object);
+        model = toModel$1(object);
       } else {
         model = object;
       }
@@ -224,6 +261,452 @@ class Scope {
     return new Scope(model, this);
   }
 }
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+class TemplateProcessor {
+}
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+const partOpenRe = /{{/g;
+const partCloseRe = /}}/g;
+const parse = (templateString) => {
+    const strings = [];
+    const expressions = [];
+    const boundaryIndex = templateString.length + 1;
+    let lastExpressionIndex = partOpenRe.lastIndex =
+        partCloseRe.lastIndex = 0;
+    while (lastExpressionIndex < boundaryIndex) {
+        const openResults = partOpenRe.exec(templateString);
+        if (openResults == null) {
+            strings.push(templateString.substring(lastExpressionIndex, boundaryIndex));
+            break;
+        }
+        else {
+            const openIndex = openResults.index;
+            partCloseRe.lastIndex = partOpenRe.lastIndex = openIndex + 2;
+            const closeResults = partCloseRe.exec(templateString);
+            if (closeResults == null) {
+                strings.push(templateString.substring(lastExpressionIndex, boundaryIndex));
+            }
+            else {
+                const closeIndex = closeResults.index;
+                strings.push(templateString.substring(lastExpressionIndex, openIndex));
+                expressions.push(templateString.substring(openIndex + 2, closeIndex));
+                lastExpressionIndex = closeIndex + 2;
+            }
+        }
+    }
+    return [strings, expressions];
+};
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+class TemplateRule {
+    constructor(nodeIndex) {
+        this.nodeIndex = nodeIndex;
+    }
+}
+class NodeTemplateRule extends TemplateRule {
+    constructor(nodeIndex, expression) {
+        super(nodeIndex);
+        this.nodeIndex = nodeIndex;
+        this.expression = expression;
+    }
+}
+class AttributeTemplateRule extends TemplateRule {
+    constructor(nodeIndex, attributeName, strings, expressions) {
+        super(nodeIndex);
+        this.nodeIndex = nodeIndex;
+        this.attributeName = attributeName;
+        this.strings = strings;
+        this.expressions = expressions;
+    }
+}
+class InnerTemplateRule extends NodeTemplateRule {
+    constructor(nodeIndex, template) {
+        super(nodeIndex, template.getAttribute('expression') || '');
+        this.nodeIndex = nodeIndex;
+        this.template = template;
+    }
+}
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+// Edge needs all 4 parameters present; IE11 needs 3rd parameter to be null
+const createTreeWalker = (node) => document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, null, false);
+class TemplateDefinition {
+    constructor(template) {
+        this.template = template;
+        this.parseAndGenerateRules();
+    }
+    cloneContent() {
+        return this.parsedTemplate.content.cloneNode(true);
+    }
+    parseAndGenerateRules() {
+        const { template } = this;
+        const content = template.content.cloneNode(true);
+        const rules = [];
+        const mutations = [];
+        const walker = createTreeWalker(content);
+        let nodeIndex = -1;
+        while (walker.nextNode()) {
+            nodeIndex++;
+            const node = walker.currentNode;
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                if (!node.hasAttributes()) {
+                    continue;
+                }
+                if (node instanceof HTMLTemplateElement) {
+                    const { parentNode } = node;
+                    const partNode = document.createTextNode('');
+                    mutations.push(() => parentNode.replaceChild(partNode, node));
+                    rules.push(new InnerTemplateRule(nodeIndex, node));
+                }
+                else {
+                    const { attributes } = node;
+                    // TODO(cdata): Fix IE/Edge attribute order here
+                    // @see https://github.com/Polymer/lit-html/blob/master/src/lit-html.ts#L220-L229
+                    for (let i = 0; i < attributes.length;) {
+                        const attribute = attributes[i];
+                        const { name, value } = attribute;
+                        const [strings, values] = parse(value);
+                        if (strings.length === 1) {
+                            ++i;
+                            continue;
+                        }
+                        rules.push(new AttributeTemplateRule(nodeIndex, name, strings, values));
+                        node.removeAttribute(name);
+                    }
+                }
+            }
+            else if (node.nodeType === Node.TEXT_NODE) {
+                const [strings, values] = parse(node.nodeValue || '');
+                const { parentNode } = node;
+                const document = node.ownerDocument;
+                if (strings.length === 1) {
+                    continue;
+                }
+                for (let i = 0; i < values.length; ++i) {
+                    const partNode = document.createTextNode(strings[i]);
+                    // @see https://github.com/Polymer/lit-html/blob/master/src/lit-html.ts#L267-L272
+                    parentNode.insertBefore(partNode, node);
+                    rules.push(new NodeTemplateRule(nodeIndex++, values[i]));
+                }
+                node.nodeValue = strings[strings.length - 1];
+            }
+        }
+        // Execute mutations
+        for (let fn of mutations) {
+            fn();
+        }
+        this.rules = rules;
+        this.parsedTemplate = document.createElement('template');
+        this.parsedTemplate.content.appendChild(content);
+    }
+}
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+class TemplatePart {
+    constructor(templateInstance, rule) {
+        this.templateInstance = templateInstance;
+        this.rule = rule;
+    }
+    get value() {
+        return this.sourceValue;
+    }
+    set value(value) {
+        if (value !== this.sourceValue) {
+            this.sourceValue = value;
+            this.applyValue(value);
+        }
+    }
+}
+class AttributeTemplatePart extends TemplatePart {
+    constructor(templateInstance, rule, element) {
+        super(templateInstance, rule);
+        this.templateInstance = templateInstance;
+        this.rule = rule;
+        this.element = element;
+    }
+    clear() {
+        this.element.removeAttribute(this.rule.attributeName);
+    }
+    applyValue(value) {
+        if (value == null) {
+            value = [];
+        }
+        else if (!Array.isArray(value)) {
+            value = [value];
+        }
+        const { rule, element } = this;
+        const { strings, attributeName } = rule;
+        const valueFragments = [];
+        for (let i = 0; i < (strings.length - 1); ++i) {
+            valueFragments.push(strings[i]);
+            valueFragments.push(value[i] || '');
+        }
+        const attributeValue = valueFragments.join('');
+        if (attributeValue != null) {
+            element.setAttribute(attributeName, attributeValue);
+        }
+        else {
+            element.removeAttribute(attributeName);
+        }
+    }
+}
+class NodeTemplatePart extends TemplatePart {
+    constructor(templateInstance, rule, startNode) {
+        super(templateInstance, rule);
+        this.templateInstance = templateInstance;
+        this.rule = rule;
+        this.startNode = startNode;
+        this.currentNodes = [];
+        this.move(startNode);
+    }
+    replace(...nodes) {
+        this.clear();
+        for (let i = 0; i < nodes.length; ++i) {
+            let node = nodes[i];
+            if (typeof node === 'string') {
+                node = document.createTextNode(node);
+            }
+            // SPECIAL NOTE(cdata): This implementation supports NodeTemplatePart as
+            // a replacement node. Usefulness TBD.
+            if (node instanceof NodeTemplatePart) {
+                const part = node;
+                node = part.startNode;
+                this.appendNode(node);
+                part.move(node);
+            }
+            else if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE ||
+                node.nodeType === Node.DOCUMENT_NODE) {
+                // NOTE(cdata): Apple's proposal explicit forbid's document fragments
+                // @see https://github.com/w3c/webcomponents/blob/gh-pages/proposals/Template-Instantiation.md
+                throw new DOMException('InvalidNodeTypeError');
+            }
+            else {
+                this.appendNode(node);
+            }
+        }
+    }
+    /**
+     * Forks the current part, inserting a new part after the current one and
+     * returning it. The forked part shares the TemplateInstance and the
+     * TemplateRule of the current part.
+     */
+    fork() {
+        const node = document.createTextNode('');
+        this.parentNode.insertBefore(node, this.nextSibling);
+        this.nextSibling = node;
+        return new NodeTemplatePart(this.templateInstance, this.rule, node);
+    }
+    /**
+     * Creates a new inner part that is enclosed completely by the current
+     * part and returns it. The enclosed part shares the TemplateInstance and the
+     * TemplateRule of the current part.
+     */
+    enclose() {
+        const node = document.createTextNode('');
+        this.parentNode.insertBefore(node, this.previousSibling.nextSibling);
+        return new NodeTemplatePart(this.templateInstance, this.rule, node);
+    }
+    move(startNode) {
+        const { currentNodes, startNode: currentStartNode } = this;
+        if (currentStartNode != null &&
+            currentStartNode !== startNode &&
+            currentNodes.length) {
+            this.clear();
+        }
+        this.parentNode = startNode.parentNode;
+        this.previousSibling = startNode;
+        this.nextSibling = startNode.nextSibling;
+        this.startNode = startNode;
+        if (currentNodes && currentNodes.length) {
+            this.replace(...currentNodes);
+        }
+    }
+    // SPECIAL NOTE(cdata): This clear is specialized a la lit-html to accept a
+    // starting node from which to clear. This supports efficient cleanup of
+    // subparts of a part (subparts are also particular to lit-html compared to
+    // Apple's proposal).
+    clear(startNode = this.previousSibling.nextSibling) {
+        if (this.parentNode === null) {
+            return;
+        }
+        let node = startNode;
+        while (node !== this.nextSibling) {
+            const nextNode = node.nextSibling;
+            this.parentNode.removeChild(node);
+            node = nextNode;
+        }
+        this.currentNodes = [];
+    }
+    appendNode(node) {
+        this.parentNode.insertBefore(node, this.nextSibling);
+        this.currentNodes.push(node);
+    }
+    applyValue(value) {
+        if (this.currentNodes.length === 1 &&
+            this.currentNodes[0].nodeType === Node.TEXT_NODE) {
+            this.currentNodes[0].nodeValue = value;
+        }
+        else {
+            this.replace(document.createTextNode(value));
+        }
+    }
+}
+class InnerTemplatePart extends NodeTemplatePart {
+    constructor(templateInstance, rule, startNode) {
+        super(templateInstance, rule, startNode);
+        this.templateInstance = templateInstance;
+        this.rule = rule;
+        this.startNode = startNode;
+    }
+    get template() {
+        return this.rule.template;
+    }
+}
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+class TemplateInstance extends DocumentFragment {
+    constructor(definition, processor, state) {
+        super();
+        this.definition = definition;
+        this.processor = processor;
+        this.createdCallbackInvoked = false;
+        this.previousState = null;
+        this.appendChild(definition.cloneContent());
+        this.generateParts();
+        this.update(state);
+    }
+    update(state) {
+        if (!this.createdCallbackInvoked) {
+            this.processor.createdCallback(this.parts, state);
+            this.createdCallbackInvoked = true;
+        }
+        this.processor.processCallback(this.parts, state);
+        this.previousState = state;
+    }
+    generateParts() {
+        const { definition } = this;
+        const { rules } = definition;
+        const parts = [];
+        const walker = createTreeWalker(this);
+        let walkerIndex = -1;
+        for (let i = 0; i < rules.length; ++i) {
+            const rule = rules[i];
+            const { nodeIndex } = rule;
+            while (walkerIndex < nodeIndex) {
+                walkerIndex++;
+                walker.nextNode();
+            }
+            const part = this.createPart(rule, walker.currentNode);
+            parts.push(part);
+        }
+        this.parts = parts;
+    }
+    // NOTE(cdata): In the original pass, this was exposed in the
+    // TemplateProcessor to be optionally overridden so that parts could
+    // have custom implementations.
+    createPart(rule, node) {
+        if (rule instanceof AttributeTemplateRule) {
+            return new AttributeTemplatePart(this, rule, node);
+        }
+        else if (rule instanceof InnerTemplateRule) {
+            return new InnerTemplatePart(this, rule, node);
+        }
+        else if (rule instanceof NodeTemplateRule) {
+            return new NodeTemplatePart(this, rule, node);
+        }
+        throw new Error(`Unknown rule type.`);
+    }
+}
+
+/**
+ * @license
+ * Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
+ * This code may only be used under the BSD style license found at http:polymer.github.io/LICENSE.txt
+ * The complete set of authors may be found at http:polymer.github.io/AUTHORS.txt
+ * The complete set of contributors may be found at http:polymer.github.io/CONTRIBUTORS.txt
+ * Code distributed by Google as part of the polymer project is also
+ * subject to an additional IP rights grant found at http:polymer.github.io/PATENTS.txt
+ */
+const templateDefinitionCache = new Map();
+const createInstance = function (template, processor, state, overrideDefinitionCache = false) {
+    if (processor == null) {
+        throw new Error('The first argument of createInstance must be an implementation of TemplateProcessor');
+    }
+    if (!templateDefinitionCache.has(template) || overrideDefinitionCache) {
+        templateDefinitionCache.set(template, new TemplateDefinition(template));
+    }
+    const definition = templateDefinitionCache.get(template);
+    return new TemplateInstance(definition, processor, state);
+};
+
+var connectedInstance = function(instance, scope) {
+  const update = () => instance.update(scope);
+
+  Object.defineProperties(instance, {
+    connect: {
+      value() {
+        scope.eachModel(model => connect(model, update));
+      }
+    },
+    disconnect: {
+      value() {
+        scope.eachModel(model => disconnect(model, update));
+      }
+    }
+  });
+
+  return instance;
+};
 
 function createTemplate(selector) {
   let tmpl = typeof selector === 'string' ?
@@ -236,25 +719,136 @@ function createTemplate(selector) {
     }
 
     let processor = new BramProcessor();
-    return createInstance__default(tmpl, processor, scope);
+    let instance = connectedInstance(
+      createInstance(tmpl, processor, scope),
+      scope
+    );
+
+    instance.connect();
+    return instance;
   };
 }
 
-class BramProcessor extends createInstance.TemplateProcessor {
-  createdCallback(_parts, _state) { }
-  processCallback(parts, state) {
-    for (const part of parts) {
-      if (part instanceof createInstance.InnerTemplatePart) {
-        // TODO
+const propertyRule = {
+  test(attrName) {
+    return attrName.startsWith(':');
+  },
+  descriptors(attrName) {
+    return {
+      property: {
+        value: attrName.substr(1)
+      },
+      isProp: {
+        value: true
       }
-      else if (part instanceof createInstance.NodeTemplatePart) {
+    };
+  }
+};
+
+const conditionalRule = {
+  test(template) {
+    return template.hasAttribute('if');
+  },
+  descriptors(template) {
+    const key = template.getAttribute('if');
+    return {
+      isConditional: {
+        value: true
+      },
+      isTruthy: {
+        value(scope) {
+          return !!scope.read(key).value;
+        }
+      },
+      moveOnce: {
+        value() {
+          if(this._hasMoved) return;
+          if(this.startNode.parentNode.nodeType !== 11) {
+            this.move(this.startNode);
+            this._hasMoved = true;
+          }
+        }
+      }
+    };
+  }
+};
+
+class BramProcessor extends TemplateProcessor {
+  constructor() {
+    super();
+    this._bramParts = new Map();
+  }
+
+  createdCallback(parts, state) {
+    for(const part of parts) {
+      let rule = part.rule;
+      if(rule.attributeName) {
+        if(propertyRule.test(rule.attributeName)) {
+          let desc = propertyRule.descriptors(rule.attributeName);
+          let newPart = Object.create(part, desc);
+          this._bramParts.set(part, newPart);
+          continue;
+        }
+      }
+      else if(rule.template) {
+        if(conditionalRule.test(rule.template)) {
+          let desc = conditionalRule.descriptors(rule.template);
+          let newPart = Object.create(part, desc);
+          newPart.move(newPart.startNode);
+          this._bramParts.set(part, newPart);
+          continue;
+        }
+      }
+      this._bramParts.set(part, part);
+    }
+  }
+ 
+  processCallback(parts, scope) {
+    for (const localPart of parts) {
+      const part = this._bramParts.get(localPart);
+      if (part instanceof InnerTemplatePart) {
+        if(part.isConditional) {
+          if(part.isTruthy(scope)) {
+            if(!part.meta) {
+              part.moveOnce();
+              let newScope = scope.add({});
+              let instance = createTemplate(part.template)(newScope);
+              part.replace.apply(part, Array.from(instance.childNodes));
+              
+              part.meta = { instance, scope: newScope };
+            } else {
+              const { instance, scope } = part.meta;
+              instance.update(scope);
+            }
+          } else {
+            if(part.meta) {
+              part.moveOnce();
+              let tn = part.startNode.ownerDocument.createTextNode('');
+              part.replace(tn);
+              part.meta = null;
+            }
+          }
+        }
+      }
+      else if (part instanceof NodeTemplatePart) {
         const { expression } = part.rule;
-        part.value = state && expression && state[expression];
+        if(scope && expression) {
+          part.value = scope.read(expression).value;
+        }
       }
-      else if (part instanceof createInstance.AttributeTemplatePart) {
+      else if (part.isProp) {
         const { expressions } = part.rule;
-        part.value = state && expressions &&
-        expressions.map(expression => state && state[expression]);
+        const element = part.element;
+        const value = scope.read(expressions[0]).value;
+        Reflect.set(element, part.property, value);
+      }
+      else if (part instanceof AttributeTemplatePart) {
+        const { expressions } = part.rule;
+        if(scope && expressions) {
+          part.value = expressions.map(expression => (
+            scope.read(expression).value
+          ));
+        }
       }
     }
   }
@@ -332,8 +926,8 @@ function Bram$1(Element) {
 var Element = Bram$1(HTMLElement);
 Bram$1.Element = Element;
 Bram$1.model = toModel;
-Bram$1.on = on;
-Bram$1.off = off;
+//Bram.on = on;
+//Bram.off = off;
 Bram$1.template = createTemplate;
 
 function installEvents(Element) {

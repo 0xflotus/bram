@@ -7,10 +7,10 @@ CLEANCSS=node_modules/.bin/cleancss
 all: bram bram-umd minify
 
 bram:
-	$(ROLLUP) -o bram.js src/bram.js
+	$(ROLLUP) -o bram.js -c rollup.config.js -f es src/bram.js
 
 bram-umd:
-	$(ROLLUP) -o bram.umd.js -f umd -n Bram src/global.js
+	$(ROLLUP) -o bram.umd.js -c rollup.config.js -f umd -n Bram src/global.js
 
 minify:
 	$(BABILI) bram.js > bram.min.js

@@ -24,9 +24,8 @@
       foo: 'bar'
     });
 
-    var hydrate = Bram.template(template);
-    var tree = hydrate(model).tree;
-    host.appendChild(tree);
+    const frag = Bram.template(template)(model);
+    host.appendChild(frag);
   })();
   </script>
   <mocha-test>

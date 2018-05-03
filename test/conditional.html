@@ -35,12 +35,12 @@
 
         beforeEach(function(){
           model = Bram.model({ val: 'Wilbur' });
-          host.appendChild(hydrate(model).tree);
+          host.appendChild(hydrate(model));
         });
 
         it('shows value when truthy', function(){
           model.condition = true;
-          var val = host.firstChild.nextSibling
+          var val = host.firstChild.nextSibling.nextSibling;
 
           assert.equal(val.nodeValue, 'Wilbur');
         });
@@ -49,7 +49,7 @@
           model.condition = true;
           model.condition = false;
 
-          var val = host.firstChild.nextSibling;
+          var val = host.firstChild.nextSibling.nextSibling;
 
           assert.equal(val, undefined, 'There is no val');
         });
@@ -59,7 +59,7 @@
           model.condition = false;
           model.condition = true;
 
-          var val = host.firstChild.nextSibling;
+          var val = host.firstChild.nextSibling.nextSibling;
 
           assert.equal(val.nodeValue, 'Wilbur');
         });
@@ -71,7 +71,7 @@
 
         beforeEach(function(){
           model = Bram.model({ bar: 'foo', condition: true });
-          host.appendChild(hydrate(model).tree);
+          host.appendChild(hydrate(model));
         });
 
         it('doesn\'t affect adjacent content', function(){

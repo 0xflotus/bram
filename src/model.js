@@ -36,7 +36,7 @@ function observe(o, fn) {
         fn({
           prop: property,
           type: 'set'
-        }, value)
+        }, value);
       }
 
       return true;

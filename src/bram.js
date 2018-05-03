@@ -1,4 +1,4 @@
-import { on, off, isModel, toModel } from './model.js';
+import { isModel, toModel } from './model2.js';
 import Scope from './scope.js';
 import { asap } from './util.js';
 import createTemplate from './template.js';
@@ -75,8 +75,8 @@ function Bram(Element) {
 var Element = Bram(HTMLElement);
 Bram.Element = Element;
 Bram.model = toModel;
-Bram.on = on;
-Bram.off = off;
+//Bram.on = on;
+//Bram.off = off;
 Bram.template = createTemplate;
 
 function installEvents(Element) {
